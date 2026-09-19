@@ -44,6 +44,31 @@ CONF_FOLLOW_UP_PHRASES = "follow_up_phrases"
 CONF_END_WORDS = "end_words"
 CONF_CLEAN_RESPONSES = "clean_responses"
 CONF_TIMEOUT = "timeout"
+CONF_ALLOWED_TOOLS = "allowed_tools"
+
+# All MCP tools the agent can be given access to. Used both as the source of
+# selector options in the config/options flow and as the default (all
+# enabled) for entries that predate this setting.
+#
+# Keep in sync with the tool names registered in mcp_server.py's
+# handle_tools_list() (built-ins) and custom_tools/*.py (search, read_url -
+# only actually registered when a search provider is configured). A tool
+# fetched from the MCP server whose name is NOT in this list is never hidden
+# by a stale copy of this list; see the allowed_tools filtering in agent.py.
+ALL_MCP_TOOLS = [
+    "discover_entities",
+    "get_entity_details",
+    "list_areas",
+    "list_domains",
+    "get_index",
+    "perform_action",
+    "get_entity_history",
+    "run_script",
+    "run_automation",
+    "set_conversation_state",
+    "search",
+    "read_url",
+]
 
 # Default values
 DEFAULT_SERVER_TYPE = "lmstudio"
@@ -101,6 +126,9 @@ DEFAULT_FOLLOW_UP_PHRASES = "anything else, what else, would you, do you, should
 DEFAULT_END_WORDS = "stop, cancel, no, nope, thanks, thank you, bye, goodbye, done, never mind, nevermind, forget it, that's all, that's it"
 DEFAULT_CLEAN_RESPONSES = False
 DEFAULT_TIMEOUT = 30
+# Default is "all tools enabled" - matches pre-existing behavior for entries
+# created before this setting existed, and is the sane default for new ones.
+DEFAULT_ALLOWED_TOOLS = list(ALL_MCP_TOOLS)
 
 # MCP Server settings
 MCP_SERVER_NAME = "ha-entity-discovery"
@@ -213,8 +241,4 @@ For ANY device request:
 {response_mode}
 
 ## Index
-{index}
-
-Current area: {current_area}
-Current time: {time}
-Current date: {date}"""
+{index}"""

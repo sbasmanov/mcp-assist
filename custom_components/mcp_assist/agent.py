@@ -5,7 +5,7 @@ import json
 import logging
 import re
 import uuid
-from typing import Any, Dict, List, Optional, Literal
+from typing import Any, Dict, List, Optional, Literal, Tuple
 
 import aiohttp
 
@@ -56,6 +56,9 @@ from .const import (
     CONF_END_WORDS,
     CONF_CLEAN_RESPONSES,
     CONF_TIMEOUT,
+    CONF_ALLOWED_TOOLS,
+    DEFAULT_ALLOWED_TOOLS,
+    ALL_MCP_TOOLS,
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_TECHNICAL_PROMPT,
     DEFAULT_DEBUG_MODE,
@@ -742,16 +745,20 @@ class MCPAssistConversationEntity(ConversationEntity):
             history = self.history.get_history(conversation_id)
             _LOGGER.debug("History retrieved: %d turns", len(history))
 
-            # Build system prompt with context
-            system_prompt = await self._build_system_prompt_with_context(user_input)
+            # Keep the system message stable so the LLM can reuse its prompt cache.
+            system_prompt, dynamic_context = await self._build_system_prompt_with_context(
+                user_input
+            )
             if self.debug_mode:
                 _LOGGER.info(
                     f"📝 System prompt built, length: {len(system_prompt)} chars"
                 )
                 _LOGGER.info(f"📝 System prompt preview: {system_prompt[:200]}...")
 
-            # Build conversation messages
-            messages = self._build_messages(system_prompt, user_input.text, history)
+            # Dynamic information belongs to the current user turn, not the system
+            # message, which changes the common prompt prefix between conversations.
+            user_text = f"{dynamic_context}\n\n{user_input.text}"
+            messages = self._build_messages(system_prompt, user_text, history)
 
             self._current_conversation_id = conversation_id
 
@@ -768,14 +775,14 @@ class MCPAssistConversationEntity(ConversationEntity):
 
             # Call LLM API
             _LOGGER.info(f"📡 Calling {self.server_type} API...")
-            response_text = await self._call_llm(messages)
+            response_text, tools_used = await self._call_llm(messages)
             _LOGGER.info(
                 f"✅ {self.server_type} response received, length: %d",
                 len(response_text),
             )
 
             return await self._build_response_result(
-                response_text, user_input, conversation_id
+                response_text, user_input, conversation_id, tools_used=tools_used
             )
 
         except Exception as err:
@@ -1015,6 +1022,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         response_text: str,
         user_input: ConversationInput,
         conversation_id: str,
+        tools_used: Optional[set] = None,
     ) -> ConversationResult:
         """Shared post-response pipeline: clean, log, detect follow-up, build result."""
         # Strip thinking tags from reasoning models
@@ -1033,7 +1041,9 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.info(f"💬 Full response preview: {preview}")
 
         # Parse response and execute any Home Assistant actions
-        actions_taken = await self._execute_actions(response_text, user_input)
+        actions_taken = await self._execute_actions(
+            response_text, user_input, tools_used=tools_used
+        )
 
         # Add final assistant response to ChatLog
         if self._current_chat_log:
@@ -1244,8 +1254,8 @@ class MCPAssistConversationEntity(ConversationEntity):
 
     async def _build_system_prompt_with_context(
         self, user_input: ConversationInput
-    ) -> str:
-        """Build system prompt with Smart Entity Index."""
+    ) -> tuple[str, str]:
+        """Build a static system prompt and dynamic context for the user turn."""
         try:
             # Get base prompts (check options first, then data, then defaults)
             system_prompt = self.entry.options.get(
@@ -1257,15 +1267,15 @@ class MCPAssistConversationEntity(ConversationEntity):
                 self.entry.data.get(CONF_TECHNICAL_PROMPT, DEFAULT_TECHNICAL_PROMPT),
             )
 
-            # Format time and date variables
+            # Build volatile context separately from the cacheable system prompt.
             current_time = dt_util.now().strftime("%H:%M:%S")
             current_date = dt_util.now().strftime("%Y-%m-%d")
-            technical_prompt = technical_prompt.replace("{time}", current_time)
-            technical_prompt = technical_prompt.replace("{date}", current_date)
-
-            # Get current area from satellite (if available)
             current_area = await self._get_current_area(user_input)
-            technical_prompt = technical_prompt.replace("{current_area}", current_area)
+            dynamic_context = (
+                f"Assistant location: {current_area}\n"
+                f"Current time: {current_time}\n"
+                f"Current date: {current_date}"
+            )
 
             # Inject mode-specific instructions
             mode_instructions = RESPONSE_MODE_INSTRUCTIONS.get(
@@ -1287,12 +1297,23 @@ class MCPAssistConversationEntity(ConversationEntity):
             # Replace {index} placeholder
             technical_prompt = technical_prompt.replace("{index}", index_json)
 
-            # Combine: system prompt + technical prompt
-            return f"{system_prompt}\n\n{technical_prompt}"
+            # Combine the static, cacheable portion.  The default template no
+            # longer contains volatile placeholders; remove the legacy block in
+            # case it was saved in a pre-existing configuration entry.
+            legacy_dynamic_context = (
+                "\n\nAssistant location: {current_area}\n"
+                "Current time: {time}\n"
+                "Current date: {date}"
+            )
+            technical_prompt = technical_prompt.replace(legacy_dynamic_context, "")
+            return f"{system_prompt}\n\n{technical_prompt}", dynamic_context
 
         except Exception as e:
             _LOGGER.error("Error building system prompt: %s", e)
-            return "You are a Home Assistant voice assistant. Use MCP tools to control devices."
+            return (
+                "You are a Home Assistant voice assistant. Use MCP tools to control devices.",
+                "Assistant location: Unknown",
+            )
 
     async def _get_home_context(self) -> str:
         """Get lightweight home context (areas and domains) to help LLM with discovery."""
@@ -1354,6 +1375,28 @@ class MCPAssistConversationEntity(ConversationEntity):
             # Return a basic prompt as fallback
             return "You are a Home Assistant voice assistant. Use MCP tools to control devices."
 
+    # Placeholder shown to the LLM instead of a previously-reported live value.
+    # Keeping the actual number/state out of history removes the temptation to
+    # parrot it instead of calling a tool again - regardless of how the next
+    # question is phrased. Control actions ("turned on X") are never redacted;
+    # only pure state reads are, since those can go stale at any time.
+    _STALE_VALUE_PLACEHOLDER = (
+        "(Reported a live value here earlier - it may already be outdated. "
+        "Do not reuse it; call a tool again for the current value.)"
+    )
+
+    @staticmethod
+    def _turn_was_pure_state_read(turn: Dict[str, Any]) -> bool:
+        """True if this turn's answer came only from reading live state.
+
+        Based on which tools actually ran during the turn (recorded in
+        `actions`), not on the wording of the question or answer - so it
+        works the same regardless of phrasing, sensor type, or language.
+        """
+        actions = turn.get("actions") or []
+        types = {a.get("type") for a in actions if isinstance(a, dict)}
+        return "state_read" in types and "control_action" not in types
+
     def _build_messages(
         self, system_prompt: str, user_text: str, history: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
@@ -1363,7 +1406,10 @@ class MCPAssistConversationEntity(ConversationEntity):
         # Add conversation history (last 5 turns)
         for turn in history[-5:]:
             messages.append({"role": "user", "content": turn["user"]})
-            messages.append({"role": "assistant", "content": turn["assistant"]})
+            assistant_text = turn["assistant"]
+            if self._turn_was_pure_state_read(turn):
+                assistant_text = self._STALE_VALUE_PLACEHOLDER
+            messages.append({"role": "assistant", "content": assistant_text})
 
         # Add current user message
         messages.append({"role": "user", "content": user_text})
@@ -1394,6 +1440,25 @@ class MCPAssistConversationEntity(ConversationEntity):
                     data = await response.json()
                     if "result" in data and "tools" in data["result"]:
                         tools = data["result"]["tools"]
+                        allowed_tools = set(
+                            self.entry.options.get(
+                                CONF_ALLOWED_TOOLS,
+                                self.entry.data.get(
+                                    CONF_ALLOWED_TOOLS, DEFAULT_ALLOWED_TOOLS
+                                ),
+                            )
+                        )
+                        # Fail open for tools the config UI doesn't know about
+                        # yet (e.g. a newly added custom_tools/*.py not in
+                        # ALL_MCP_TOOLS): only hide a tool the person could
+                        # actually see and uncheck in Advanced Settings.
+                        # Once a tool is added to ALL_MCP_TOOLS it becomes
+                        # checkbox-controlled like the rest.
+                        tools = [
+                            tool for tool in tools
+                            if tool["name"] in allowed_tools
+                            or tool["name"] not in ALL_MCP_TOOLS
+                        ]
                         _LOGGER.info("Retrieved %d MCP tools", len(tools))
 
                         # Convert to OpenAI format for LM Studio
@@ -1931,13 +1996,16 @@ class MCPAssistConversationEntity(ConversationEntity):
 
         return payload
 
-    async def _call_llm_streaming(self, messages: List[Dict[str, Any]]) -> str:
+    async def _call_llm_streaming(
+        self, messages: List[Dict[str, Any]]
+    ) -> Tuple[str, set]:
         """Stream LLM responses with immediate TTS feedback."""
         _LOGGER.info(f"🚀 Starting streaming {self.server_type} conversation")
 
         # Test streaming once and cache result
         if not hasattr(self, "_streaming_available"):
-            self._streaming_available = await self._test_streaming_basic()
+#            self._streaming_available = await self._test_streaming_basic()
+            self._streaming_available = True
 
         if not self._streaming_available:
             _LOGGER.warning("Streaming not available, falling back to HTTP")
@@ -1954,6 +2022,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         response_text = ""
         sentence_buffer = ""
         completed_tools = set()
+        all_tools_used: set = set()
 
         for iteration in range(self.max_iterations):
             _LOGGER.info(f"🔄 Stream iteration {iteration + 1}")
@@ -2342,6 +2411,11 @@ class MCPAssistConversationEntity(ConversationEntity):
 
             # If we got tool calls, execute them
             if has_tool_calls and current_tool_calls:
+                all_tools_used.update(
+                    tc.get("function", {}).get("name")
+                    for tc in current_tool_calls
+                    if tc.get("function", {}).get("name")
+                )
                 _LOGGER.info(
                     f"⚡ Executing {len(current_tool_calls)} streamed tool calls"
                 )
@@ -2423,19 +2497,29 @@ class MCPAssistConversationEntity(ConversationEntity):
             else:
                 # No tool calls, return the response
                 if response_text:
-                    return response_text
+                    return response_text, all_tools_used
                 else:
                     # No content and no tools, might need another iteration
                     _LOGGER.warning("Empty response from streaming, retrying...")
 
         # Hit max iterations
         if response_text:
-            return response_text
+            return response_text, all_tools_used
         else:
-            return f"I reached the maximum of {self.max_iterations} tool calls while processing your request. Try simplifying your request, or increase the limit in Advanced Settings if you have a complex automation need."
+            return (
+                f"I reached the maximum of {self.max_iterations} tool calls while processing your request. Try simplifying your request, or increase the limit in Advanced Settings if you have a complex automation need.",
+                all_tools_used,
+            )
 
-    async def _call_llm(self, messages: List[Dict[str, Any]]) -> str:
-        """Call LLM API with MCP tools and handle tool execution loop."""
+    async def _call_llm(
+        self, messages: List[Dict[str, Any]]
+    ) -> Tuple[str, set]:
+        """Call LLM API with MCP tools and handle tool execution loop.
+
+        Returns (response_text, tools_used) - tools_used is the set of MCP
+        tool names actually invoked while producing this response, so the
+        caller can record whether the answer reflects a live read.
+        """
         # Try streaming first, fallback to HTTP if needed
         try:
             return await self._call_llm_streaming(messages)
@@ -2443,7 +2527,9 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.warning(f"Streaming failed ({e}), using HTTP fallback")
             return await self._call_llm_http(messages)
 
-    async def _call_llm_http(self, messages: List[Dict[str, Any]]) -> str:
+    async def _call_llm_http(
+        self, messages: List[Dict[str, Any]]
+    ) -> Tuple[str, set]:
         """Original HTTP-based LLM call (fallback)."""
         _LOGGER.info(f"🚀 Using HTTP fallback for {self.server_type}")
 
@@ -2454,6 +2540,7 @@ class MCPAssistConversationEntity(ConversationEntity):
 
         # Keep a mutable copy of messages for the conversation
         conversation_messages = list(messages)
+        all_tools_used: set = set()
 
         # Tool execution loop
         for iteration in range(self.max_iterations):
@@ -2544,6 +2631,11 @@ class MCPAssistConversationEntity(ConversationEntity):
                         _LOGGER.info(
                             f"🛠️ {self.server_type} requested {len(tool_calls)} tool calls"
                         )
+                        all_tools_used.update(
+                            tc.get("function", {}).get("name")
+                            for tc in tool_calls
+                            if tc.get("function", {}).get("name")
+                        )
 
                         # Capture thought_signature from first tool_call (Gemini 3)
                         if tool_calls and "extra_content" in tool_calls[0]:
@@ -2628,16 +2720,29 @@ class MCPAssistConversationEntity(ConversationEntity):
                             f"💬 Final response received (length: {len(final_content)})"
                         )
                         _LOGGER.info(f"💬 Full response: {final_content}")
-                        return final_content
+                        return final_content, all_tools_used
 
         # If we hit max iterations, return what we have
         _LOGGER.warning(
             f"⚠️ Hit maximum iterations ({self.max_iterations}) in tool execution loop"
         )
-        return f"I reached the maximum of {self.max_iterations} tool calls while processing your request. Try simplifying your request, or increase the limit in Advanced Settings if you have a complex automation need."
+        return (
+            f"I reached the maximum of {self.max_iterations} tool calls while processing your request. Try simplifying your request, or increase the limit in Advanced Settings if you have a complex automation need.",
+            all_tools_used,
+        )
+
+    # Tools that only read current state - their answers are only valid at
+    # the moment they were given and must never be replayed as fact later.
+    _STATE_READ_TOOLS = {"discover_entities", "get_entity_details", "get_entity_history"}
+    # Tools that change something - the resulting fact ("turned on X") stays
+    # true regardless of when it's recalled, so these are never redacted.
+    _CONTROL_TOOLS = {"perform_action", "run_script", "run_automation"}
 
     async def _execute_actions(
-        self, response_text: str, user_input: ConversationInput
+        self,
+        response_text: str,
+        user_input: ConversationInput,
+        tools_used: Optional[set] = None,
     ) -> List[Dict[str, Any]]:
         """Parse response for any action information.
 
@@ -2645,6 +2750,21 @@ class MCPAssistConversationEntity(ConversationEntity):
         We don't need to parse intents or execute them - just return info about what happened.
         """
         actions_taken = []
+        tools_used = tools_used or set()
+
+        # Structural (not text-based) record of what kind of turn this was,
+        # used later by _build_messages to decide whether to redact this
+        # turn's answer from future history. A turn that both read and wrote
+        # is treated as a control action - not redacted - since the write
+        # is the more important fact to keep.
+        if tools_used & self._CONTROL_TOOLS:
+            actions_taken.append(
+                {"type": "control_action", "tools": sorted(tools_used & self._CONTROL_TOOLS)}
+            )
+        elif tools_used & self._STATE_READ_TOOLS:
+            actions_taken.append(
+                {"type": "state_read", "tools": sorted(tools_used & self._STATE_READ_TOOLS)}
+            )
 
         # MCP tools are executed by LM Studio directly, so we just log what was mentioned
         # The actual actions have already been performed via MCP's perform_action tool

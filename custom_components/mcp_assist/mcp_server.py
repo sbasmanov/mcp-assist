@@ -1090,6 +1090,44 @@ class MCPServer:
 
     async def tool_discover_entities(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Discover entities based on criteria with progress notifications."""
+        # LLMs commonly use natural-language catch-alls such as "all" for a
+        # domain.  In Home Assistant those are not domains: no domain filter is
+        # the correct way to search every exposed entity.
+        args = args.copy()
+        domain = args.get("domain")
+        if isinstance(domain, str):
+            normalized_domain = domain.strip().casefold()
+            if normalized_domain in {"all", "any", "*"}:
+                args.pop("domain")
+                _LOGGER.debug(
+                    "Treating discover_entities domain=%r as an unrestricted search",
+                    domain,
+                )
+            elif normalized_domain:
+                valid_domains = sorted(
+                    {
+                        entity_id.partition(".")[0]
+                        for entity_id in self.hass.states.async_entity_ids()
+                        if async_should_expose(self.hass, "conversation", entity_id)
+                    }
+                )
+                if normalized_domain not in valid_domains:
+                    return {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    f"Invalid Home Assistant domain: {domain!r}. "
+                                    f"Available domains: {', '.join(valid_domains)}. "
+                                    "Retry discover_entities with one of these domains, "
+                                    "or omit domain to search all entities."
+                                ),
+                            }
+                        ],
+                        "isError": True,
+                    }
+                args["domain"] = normalized_domain
+
         # Notify start
         self.publish_progress(
             "tool_start",

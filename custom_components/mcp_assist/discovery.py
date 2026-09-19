@@ -127,7 +127,15 @@ class SmartDiscovery:
             return await self._discover_pet_entities(name_contains, limit)
         elif query_type == QueryType.AGGREGATE and not device_class and not name_pattern and not inferred_type and not floor and not label:
             return await self._discover_aggregate_entities(domain, state, limit)
-        elif area and not floor and not label and not device_class and not name_pattern and not inferred_type:
+        elif (
+            area
+            and not floor
+            and not label
+            and not name_contains
+            and not device_class
+            and not name_pattern
+            and not inferred_type
+        ):
             return await self._discover_area_entities(area, domain, state, limit)
         else:
             # Fall back to general discovery (handles device_class, name_pattern, and inferred_type)
@@ -1109,7 +1117,7 @@ class SmartDiscovery:
                         entity_count += 1
 
             # Count entities via devices in this area
-            for device_entry in device_registry.devices.values():
+            for device_entry in device_registry.devices:
                 if device_entry.area_id == area_entry.id:
                     for entity_entry in entity_registry.entities.values():
                         if (entity_entry.device_id == device_entry.id

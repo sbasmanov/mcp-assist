@@ -59,6 +59,7 @@ from .const import (
     CONF_END_WORDS,
     CONF_CLEAN_RESPONSES,
     CONF_TIMEOUT,
+    CONF_ALLOWED_TOOLS,
     SERVER_TYPE_LMSTUDIO,
     SERVER_TYPE_LLAMACPP,
     SERVER_TYPE_OLLAMA,
@@ -111,6 +112,8 @@ from .const import (
     DEFAULT_END_WORDS,
     DEFAULT_CLEAN_RESPONSES,
     DEFAULT_TIMEOUT,
+    DEFAULT_ALLOWED_TOOLS,
+    ALL_MCP_TOOLS,
     DEFAULT_API_KEY,
     OPENAI_BASE_URL,
     GEMINI_BASE_URL,
@@ -379,6 +382,65 @@ def validate_allowed_ips(allowed_ips_str: str) -> tuple[bool, str]:
             return False, f"Invalid IP address or CIDR range: {ip_entry}"
 
     return True, ""
+
+
+# Human-readable labels for MCP tool selection UI
+MCP_TOOL_LABELS = {
+    "discover_entities": "Discover Entities",
+    "get_entity_details": "Get Entity Details",
+    "list_areas": "List Areas",
+    "list_domains": "List Domains",
+    "get_index": "Get System Index",
+    "perform_action": "Perform Action (control devices)",
+    "get_entity_history": "Get Entity History",
+    "run_script": "Run Script",
+    "run_automation": "Run Automation",
+    "set_conversation_state": "Set Conversation State",
+    "search": "Web Search (needs a search provider configured below)",
+    "read_url": "Read URL (needs a search provider configured below)",
+}
+
+
+def _allowed_tools_selector(tool_names: list[str]) -> SelectSelector:
+    """Build the multi-select checkbox list for choosing available MCP tools."""
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                {"value": tool_id, "label": MCP_TOOL_LABELS.get(tool_id, tool_id)}
+                for tool_id in tool_names
+            ],
+            mode=SelectSelectorMode.LIST,
+            multiple=True,
+        )
+    )
+
+
+async def _get_available_tool_names(hass: HomeAssistant) -> list[str]:
+    """Names of MCP tools to offer as checkboxes.
+
+    Prefers asking the already-running shared MCPServer directly (same
+    in-process call agent.py makes over HTTP, just without the network hop)
+    so the list always matches what's really registered - built-ins plus
+    whatever custom_tools/*.py the current search-provider setting enables.
+    Falls back to the static ALL_MCP_TOOLS when no server is running yet,
+    which is only the case while setting up the very first profile (the
+    shared server doesn't exist until that flow finishes).
+    """
+    mcp_server = hass.data.get(DOMAIN, {}).get("shared_mcp_server")
+    if mcp_server:
+        try:
+            tools_result = await mcp_server.handle_tools_list()
+            live_names = [
+                tool["name"] for tool in tools_result.get("tools", []) if tool.get("name")
+            ]
+            if live_names:
+                return live_names
+        except Exception as err:
+            _LOGGER.warning(
+                "Could not fetch live MCP tool list, falling back to static list: %s",
+                err,
+            )
+    return list(ALL_MCP_TOOLS)
 
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
@@ -951,6 +1013,10 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Gemini requires temperature=1.0 for optimal performance (Google's guidance)
         default_temp = 1.0 if server_type == SERVER_TYPE_GEMINI else DEFAULT_TEMPERATURE
 
+        # Tools shown for the allowed_tools checkboxes - live from the
+        # running MCP server when available, else the static fallback list.
+        available_tools = await _get_available_tool_names(self.hass)
+
         # Build schema based on server type
         if server_type in (SERVER_TYPE_OPENCLAW, SERVER_TYPE_HERMES):
             # OpenClaw/Hermes - show conversation settings but hide LLM-specific fields
@@ -991,6 +1057,9 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Coerce(int), vol.Range(min=5, max=300)
                 ),
                 vol.Required(CONF_DEBUG_MODE, default=DEFAULT_DEBUG_MODE): bool,
+                vol.Optional(
+                    CONF_ALLOWED_TOOLS, default=DEFAULT_ALLOWED_TOOLS
+                ): _allowed_tools_selector(available_tools),
             }
         else:
             # Other servers - show all fields
@@ -1050,6 +1119,9 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         vol.Coerce(int), vol.Range(min=5, max=300)
                     ),
                     vol.Required(CONF_DEBUG_MODE, default=DEFAULT_DEBUG_MODE): bool,
+                    vol.Optional(
+                        CONF_ALLOWED_TOOLS, default=DEFAULT_ALLOWED_TOOLS
+                    ): _allowed_tools_selector(available_tools),
                 }
             )
 
@@ -1283,6 +1355,10 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
         response_mode_value = options.get(
             CONF_RESPONSE_MODE, options.get(CONF_FOLLOW_UP_MODE, DEFAULT_RESPONSE_MODE)
         )
+
+        # Tools shown for the allowed_tools checkboxes - live from the
+        # running MCP server when available, else the static fallback list.
+        available_tools = await _get_available_tool_names(self.hass)
 
         # Fetch models based on server type
         models = []
@@ -1552,6 +1628,13 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                             data.get(CONF_DEBUG_MODE, DEFAULT_DEBUG_MODE),
                         ),
                     ): bool,
+                    vol.Optional(
+                        CONF_ALLOWED_TOOLS,
+                        default=options.get(
+                            CONF_ALLOWED_TOOLS,
+                            data.get(CONF_ALLOWED_TOOLS, DEFAULT_ALLOWED_TOOLS),
+                        ),
+                    ): _allowed_tools_selector(available_tools),
                 }
             )
         else:
@@ -1676,6 +1759,14 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                             data.get(CONF_DEBUG_MODE, DEFAULT_DEBUG_MODE),
                         ),
                     ): bool,
+                    # 17/19. Allowed MCP Tools
+                    vol.Optional(
+                        CONF_ALLOWED_TOOLS,
+                        default=options.get(
+                            CONF_ALLOWED_TOOLS,
+                            data.get(CONF_ALLOWED_TOOLS, DEFAULT_ALLOWED_TOOLS),
+                        ),
+                    ): _allowed_tools_selector(available_tools),
                 }
             )
 

@@ -402,7 +402,7 @@ class IndexManager:
                 label_areas[label_id].add(area_entry.id)
 
         label_devices = defaultdict(set)
-        for device_entry in device_reg.devices.values():
+        for device_entry in device_reg.devices:
             for label_id in getattr(device_entry, "labels", set()) or set():
                 label_devices[label_id].add(device_entry.id)
 
