@@ -1,0 +1,62 @@
+{
+  "type": "function",
+  "function": {
+    "name": "discover_entities",
+    "description": "Find and list Home Assistant entities by criteria like area, floor, label, type, domain, device_class, or current state. Use this to discover what devices are available before trying to control them.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "entity_type": {
+          "type": "string",
+          "description": "Type of entity to find (e.g., 'light', 'switch', 'sensor', 'climate')"
+        },
+        "area": {
+          "type": "string",
+          "description": "Area/room name or alias to search in - use names from the areas list provided in your system context (e.g., 'Kitchen', 'Back Garden', 'Living Room'). If the value matches a floor name or alias instead, it will search that floor."
+        },
+        "floor": {
+          "type": "string",
+          "description": "Floor name or alias to search in (e.g., 'Upstairs', 'Basement', 'Ground Floor'). Check get_index() to see available floors."
+        },
+        "label": {
+          "type": "string",
+          "description": "Label name to filter by (matches labels assigned directly to entities, their devices, or their areas). Check get_index() to see available labels."
+        },
+        "domain": {
+          "type": "string",
+          "description": "Home Assistant domain to filter by (e.g., 'light', 'switch', 'climate', 'sensor')"
+        },
+        "state": {
+          "type": "string",
+          "description": "Current state to filter by (e.g., 'on', 'off', 'unavailable')"
+        },
+        "name_contains": {
+          "type": "string",
+          "description": "Text that entity name should contain (case-insensitive)"
+        },
+        "device_class": {
+          "oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}}
+          ],
+          "description": "Device class to filter by (e.g., 'temperature', 'motion', 'door', 'moisture'). Can be a single string or array of strings for OR logic. Check the index for available device classes per domain."
+        },
+        "name_pattern": {
+          "type": "string",
+          "description": "Wildcard pattern to match entity IDs (e.g., '*_person_detected', 'sensor.*_ble_area'). Supports * for any characters."
+        },
+        "inferred_type": {
+          "type": "string",
+          "description": "Inferred entity type from the index (e.g., 'person_detection', 'location_tracking'). The pattern will be looked up from the index's inferred_types. Check get_index() to see available inferred types."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of entities to return (default: 20)",
+          "default": 20
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

@@ -140,6 +140,12 @@ MAX_DISCOVERY_RESULTS = 100
 CONF_MAX_ENTITIES_PER_DISCOVERY = "max_entities_per_discovery"
 DEFAULT_MAX_ENTITIES_PER_DISCOVERY = 50
 
+# Shared setting: escape non-ASCII characters as \uXXXX in JSON text that is
+# shown to the LLM (index, tool results). Off by default - small models read
+# real Cyrillic/etc. characters far better than escape sequences.
+CONF_ENSURE_ASCII = "ensure_ascii"
+DEFAULT_ENSURE_ASCII = False
+
 RESPONSE_MODE_INSTRUCTIONS = {
     "none": """## Follow-up Questions
 Do NOT ask follow-up questions. Complete the task and end immediately.

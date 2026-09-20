@@ -27,6 +27,7 @@ except ImportError:  # pragma: no cover - older Home Assistant versions
     lr = None
 
 from .const import MAX_ENTITIES_PER_DISCOVERY
+from .key_attributes import pick_attributes
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -301,6 +302,13 @@ class SmartDiscovery:
                 return floor_entry
 
         return None
+
+    def is_known_area_or_floor(self, name: str) -> bool:
+        """True if name resolves to an area or a floor (by name or alias)."""
+        if self._resolve_area_entry(name, ar.async_get(self.hass)):
+            return True
+        floor_registry = fr.async_get(self.hass) if fr else None
+        return self._resolve_floor_entry(name, floor_registry) is not None
 
     def _resolve_label_entry(self, label_name: str, label_registry: Any) -> Any:
         """Resolve a label by name."""
@@ -962,13 +970,9 @@ class SmartDiscovery:
         if entity_aliases:
             entity_info["aliases"] = entity_aliases
 
-        # Add useful attributes
+        # Add the key attributes of this domain (see key_attributes.py)
         if state_obj.attributes:
-            useful_attrs = {}
-            for attr in ["brightness", "temperature", "humidity", "unit_of_measurement",
-                        "device_class", "friendly_name"]:
-                if attr in state_obj.attributes:
-                    useful_attrs[attr] = state_obj.attributes[attr]
+            useful_attrs = pick_attributes(state_obj.domain, state_obj.attributes)
             if useful_attrs:
                 entity_info["attributes"] = useful_attrs
 

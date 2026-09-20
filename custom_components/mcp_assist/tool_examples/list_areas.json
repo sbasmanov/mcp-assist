@@ -1,0 +1,13 @@
+{
+  "type": "function",
+  "function": {
+    "name": "list_areas",
+    "description": "List all areas in the home with their entity counts, floors, and area labels",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

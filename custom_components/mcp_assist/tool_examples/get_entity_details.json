@@ -1,0 +1,19 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_entity_details",
+    "description": "Get current state, attributes, area, floor, and labels of specific entities",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "entity_ids": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List of entity IDs to get details for"
+        }
+      },
+      "required": ["entity_ids"],
+      "additionalProperties": false
+    }
+  }
+}

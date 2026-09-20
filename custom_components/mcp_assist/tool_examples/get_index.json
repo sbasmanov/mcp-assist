@@ -1,0 +1,13 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_index",
+    "description": "Get the pre-generated system structure index. This index provides a lightweight overview of the Home Assistant system including areas, floors, labels, domains, device classes, people, pets, calendars, zones, automations, and scripts. Call this ONCE at the start of a conversation to understand what exists in the system, then use discover_entities to query specific entities. The index is ~400-800 tokens vs ~15k tokens for a full entity dump.",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

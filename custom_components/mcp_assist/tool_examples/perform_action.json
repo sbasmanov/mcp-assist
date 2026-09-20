@@ -1,0 +1,56 @@
+{
+  "type": "function",
+  "function": {
+    "name": "perform_action",
+    "description": "Control Home Assistant devices by calling services. Use after discovering entities to turn on/off lights, set temperatures, open/close covers, etc.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "description": "The domain of the service to call (e.g., 'light', 'switch', 'climate', 'vacuum', 'media_player', etc.)"
+        },
+        "action": {
+          "type": "string",
+          "description": "The service action (e.g., 'turn_on', 'turn_off', 'toggle', 'set_temperature')"
+        },
+        "target": {
+          "type": "object",
+          "description": "Target entities, areas, or devices",
+          "properties": {
+            "entity_id": {
+              "oneOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}}
+              ],
+              "description": "Single entity ID or list of entity IDs"
+            },
+            "area_id": {
+              "oneOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}}
+              ],
+              "description": "Single area ID or list of area IDs"
+            },
+            "device_id": {
+              "oneOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}}
+              ],
+              "description": "Single device ID or list of device IDs"
+            }
+          },
+          "minProperties": 1,
+          "additionalProperties": false
+        },
+        "data": {
+          "type": "object",
+          "description": "Additional parameters for the service (e.g., brightness: 50, temperature: 22)",
+          "additionalProperties": true
+        }
+      },
+      "required": ["domain", "action", "target"],
+      "additionalProperties": false
+    }
+  }
+}

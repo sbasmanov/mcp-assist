@@ -57,6 +57,8 @@ from .const import (
     CONF_CLEAN_RESPONSES,
     CONF_TIMEOUT,
     CONF_ALLOWED_TOOLS,
+    CONF_ENSURE_ASCII,
+    DEFAULT_ENSURE_ASCII,
     DEFAULT_ALLOWED_TOOLS,
     ALL_MCP_TOOLS,
     DEFAULT_SYSTEM_PROMPT,
@@ -106,6 +108,8 @@ from .const import (
     MIN_REASONING_COMPLETION_TOKENS,
 )
 from .conversation_history import ConversationHistory
+from .llm_json import compact_index, llm_json
+from .tool_descriptions import apply_tool_overrides
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1289,7 +1293,10 @@ class MCPAssistConversationEntity(ConversationEntity):
             index_manager = self.hass.data.get(DOMAIN, {}).get("index_manager")
             if index_manager:
                 index = await index_manager.get_index()
-                index_json = json.dumps(index, indent=2)
+                index_json = llm_json(
+                    compact_index(index),
+                    self._get_shared_setting(CONF_ENSURE_ASCII, DEFAULT_ENSURE_ASCII),
+                )
             else:
                 index_json = "{}"
                 _LOGGER.warning("IndexManager not available, using empty index")
@@ -1417,6 +1424,11 @@ class MCPAssistConversationEntity(ConversationEntity):
         return messages
 
     async def _get_mcp_tools(self) -> Optional[List[Dict[str, Any]]]:
+        """Get MCP tools in OpenAI format, with tool_descriptions/ overrides applied."""
+        tools = await self._fetch_mcp_tools()
+        return await self.hass.async_add_executor_job(apply_tool_overrides, tools)
+
+    async def _fetch_mcp_tools(self) -> Optional[List[Dict[str, Any]]]:
         """Fetch available tools from MCP server."""
         try:
             mcp_url = f"http://localhost:{self.mcp_port}"

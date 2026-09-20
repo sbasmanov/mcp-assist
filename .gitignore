@@ -142,3 +142,9 @@ README_DEPLOYMENT.md
 CLAUDE.md
 ha_domains_complete_reference.md
 DOMAIN_REGISTRY.md
+
+# Local overrides of tool definitions (see custom_components/mcp_assist/tool_descriptions/README.md)
+custom_components/mcp_assist/tool_descriptions/*.json
+
+# Local notes from manual test runs (tests/phrases.md itself is tracked)
+tests/*.md

@@ -1,0 +1,28 @@
+{
+  "type": "function",
+  "function": {
+    "name": "run_automation",
+    "description": "Trigger a Home Assistant automation with optional variables. Use this to manually trigger automations.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "automation_id": {
+          "type": "string",
+          "description": "The automation entity ID (e.g., 'automation.notify_on_motion' or just 'notify_on_motion')"
+        },
+        "variables": {
+          "type": "object",
+          "description": "Variables to pass to the automation (available as trigger.variables)",
+          "additionalProperties": true
+        },
+        "skip_conditions": {
+          "type": "boolean",
+          "description": "Whether to skip the automation's conditions (default: false)",
+          "default": false
+        }
+      },
+      "required": ["automation_id"],
+      "additionalProperties": false
+    }
+  }
+}

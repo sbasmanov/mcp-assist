@@ -1,0 +1,13 @@
+{
+  "type": "function",
+  "function": {
+    "name": "list_domains",
+    "description": "List all available domains with entity counts",
+    "parameters": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  }
+}

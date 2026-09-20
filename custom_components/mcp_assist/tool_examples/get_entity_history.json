@@ -1,0 +1,32 @@
+{
+  "type": "function",
+  "function": {
+    "name": "get_entity_history",
+    "description": "Get historical state changes for a specific entity over a time period. Shows when the entity changed state with timestamps. Useful for answering questions like 'when did the front door open?' or 'what time did the temperature change?'",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "entity_id": {
+          "type": "string",
+          "description": "The entity ID to get history for (e.g., 'binary_sensor.front_door', 'sensor.temperature')"
+        },
+        "hours": {
+          "type": "integer",
+          "description": "Number of hours of history to retrieve (default: 24, max: 168 for 1 week)",
+          "default": 24,
+          "minimum": 1,
+          "maximum": 168
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of state changes to return (default: 50, max: 100). Most recent changes shown first.",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "required": ["entity_id"],
+      "additionalProperties": false
+    }
+  }
+}

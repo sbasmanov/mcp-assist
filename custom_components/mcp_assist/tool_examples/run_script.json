@@ -1,0 +1,28 @@
+{
+  "type": "function",
+  "function": {
+    "name": "run_script",
+    "description": "Execute a Home Assistant script and return its response variables. Use this for scripts that return data (e.g., camera analysis, calculations). Returns the script's response variables.",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "script_id": {
+          "type": "string",
+          "description": "The script entity ID (e.g., 'script.llm_camera_analysis' or just 'llm_camera_analysis')"
+        },
+        "variables": {
+          "type": "object",
+          "description": "Variables to pass to the script",
+          "additionalProperties": true
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Timeout in seconds (default: 60)",
+          "default": 60
+        }
+      },
+      "required": ["script_id"],
+      "additionalProperties": false
+    }
+  }
+}

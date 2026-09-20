@@ -27,10 +27,15 @@ from .const import (
     CONF_ALLOWED_IPS,
     CONF_SEARCH_PROVIDER,
     CONF_ENABLE_CUSTOM_TOOLS,
+    CONF_ENSURE_ASCII,
     DEFAULT_LMSTUDIO_URL,
     DEFAULT_ALLOWED_IPS,
+    DEFAULT_ENSURE_ASCII,
 )
 from .discovery import EntityDiscovery
+from .llm_json import compact_index, llm_json
+from .key_attributes import format_state
+from .tool_definitions import default_tools
 from .domain_registry import (
     validate_domain_action,
     get_supported_domains,
@@ -85,6 +90,35 @@ def _strip_non_json_serializable(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, bool)):
         return value
     return _OMIT
+
+
+_DISCOVERY_FILTERS = (
+    "area",
+    "floor",
+    "label",
+    "domain",
+    "device_class",
+    "state",
+    "name_contains",
+    "name_pattern",
+    "inferred_type",
+    "entity_type",
+)
+
+
+def _state_text(entity: Dict[str, Any], default_temp_unit: Any = None) -> str:
+    """State of a discovered entity with the key values of its domain.
+
+    A bare state is often useless to a small model: a sensor's number has no
+    unit, and the state of a weather or climate entity ("partlycloudy", "heat")
+    carries none of the readings the user asks about. See key_attributes.py.
+    """
+    return format_state(
+        entity.get("domain"),
+        entity.get("state"),
+        entity.get("attributes"),
+        default_temp_unit,
+    )
 
 
 class MCPServer:
@@ -182,6 +216,12 @@ class MCPServer:
             return "brave"
 
         return "none"
+
+    def _llm_json(self, obj: Any) -> str:
+        """Serialize a value for text returned to the LLM (see llm_json)."""
+        return llm_json(
+            obj, self._get_shared_setting(CONF_ENSURE_ASCII, DEFAULT_ENSURE_ASCII)
+        )
 
     async def start(self) -> None:
         """Start the MCP server."""
@@ -755,282 +795,41 @@ class MCPServer:
             "serverInfo": {"name": MCP_SERVER_NAME, "version": "0.1.0"},
         }
 
+    async def _get_index_flags(self) -> Dict[str, bool]:
+        """Say which optional parts the system index actually contains.
+
+        Used to hide tools and parameters that would be useless in this Home
+        Assistant (and only confuse a small model). An empty result means
+        "unknown": default_tools() then advertises everything.
+        """
+        from .const import DOMAIN
+
+        index_manager = self.hass.data.get(DOMAIN, {}).get("index_manager")
+        if not index_manager:
+            return {}
+        try:
+            index = await index_manager.get_index()
+        except Exception as err:
+            _LOGGER.debug("Index unavailable for the tools list: %s", err)
+            return {}
+        if not index:
+            return {}
+        return {
+            "floors": bool(index.get("floors")),
+            "labels": bool(index.get("labels")),
+            "inferred_types": bool(index.get("inferred_types")),
+            "scripts": bool(index.get("scripts")),
+            "automations": bool(index.get("automations")),
+        }
+
     async def handle_tools_list(self) -> Dict[str, Any]:
         """Handle tools/list request."""
         _LOGGER.info("MCP tools/list request received")
 
-        # Get configured max entities limit from system entry
-        from .const import DOMAIN, CONF_MAX_ENTITIES_PER_DISCOVERY, DEFAULT_MAX_ENTITIES_PER_DISCOVERY
-        max_limit = DEFAULT_MAX_ENTITIES_PER_DISCOVERY
-        for entry in self.hass.config_entries.async_entries(DOMAIN):
-            if entry.source == "system":
-                max_limit = entry.data.get(CONF_MAX_ENTITIES_PER_DISCOVERY, DEFAULT_MAX_ENTITIES_PER_DISCOVERY)
-                break
-
-        tools = [
-            {
-                "name": "discover_entities",
-                "description": "Find and list Home Assistant entities by criteria like area, floor, label, type, domain, device_class, or current state. Use this to discover what devices are available before trying to control them.",
-                "inputSchema": {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {
-                        "entity_type": {
-                            "type": "string",
-                            "description": "Type of entity to find (e.g., 'light', 'switch', 'sensor', 'climate')",
-                        },
-                        "area": {
-                            "type": "string",
-                            "description": "Area/room name or alias to search in - use names from the areas list provided in your system context (e.g., 'Kitchen', 'Back Garden', 'Living Room'). If the value matches a floor name or alias instead, it will search that floor.",
-                        },
-                        "floor": {
-                            "type": "string",
-                            "description": "Floor name or alias to search in (e.g., 'Upstairs', 'Basement', 'Ground Floor'). Check get_index() to see available floors.",
-                        },
-                        "label": {
-                            "type": "string",
-                            "description": "Label name to filter by (matches labels assigned directly to entities, their devices, or their areas). Check get_index() to see available labels.",
-                        },
-                        "domain": {
-                            "type": "string",
-                            "description": "Home Assistant domain to filter by (e.g., 'light', 'switch', 'climate', 'sensor')",
-                        },
-                        "state": {
-                            "type": "string",
-                            "description": "Current state to filter by (e.g., 'on', 'off', 'unavailable')",
-                        },
-                        "name_contains": {
-                            "type": "string",
-                            "description": "Text that entity name should contain (case-insensitive)",
-                        },
-                        "device_class": {
-                            "oneOf": [
-                                {"type": "string"},
-                                {"type": "array", "items": {"type": "string"}},
-                            ],
-                            "description": "Device class to filter by (e.g., 'temperature', 'motion', 'door', 'moisture'). Can be a single string or array of strings for OR logic. Check the index for available device classes per domain.",
-                        },
-                        "name_pattern": {
-                            "type": "string",
-                            "description": "Wildcard pattern to match entity IDs (e.g., '*_person_detected', 'sensor.*_ble_area'). Supports * for any characters.",
-                        },
-                        "inferred_type": {
-                            "type": "string",
-                            "description": "Inferred entity type from the index (e.g., 'person_detection', 'location_tracking'). The pattern will be looked up from the index's inferred_types. Check get_index() to see available inferred types.",
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": f"Maximum number of entities to return (default: 20, max: {max_limit})",
-                            "default": 20,
-                        },
-                    },
-                    "required": [],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "get_entity_details",
-                "description": "Get current state, attributes, area, floor, and labels of specific entities",
-                "inputSchema": {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {
-                        "entity_ids": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "List of entity IDs to get details for",
-                        }
-                    },
-                    "required": ["entity_ids"],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "list_areas",
-                "description": "List all areas in the home with their entity counts, floors, and area labels",
-                "inputSchema": {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "list_domains",
-                "description": "List all available domains with entity counts",
-                "inputSchema": {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "get_index",
-                "description": "Get the pre-generated system structure index. This index provides a lightweight overview of the Home Assistant system including areas, floors, labels, domains, device classes, people, pets, calendars, zones, automations, and scripts. Call this ONCE at the start of a conversation to understand what exists in the system, then use discover_entities to query specific entities. The index is ~400-800 tokens vs ~15k tokens for a full entity dump.",
-                "inputSchema": {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {},
-                    "required": [],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "perform_action",
-                "description": "Control Home Assistant devices by calling services. Use after discovering entities to turn on/off lights, set temperatures, open/close covers, etc.",
-                "inputSchema": {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {
-                        "domain": {
-                            "type": "string",
-                            "description": "The domain of the service to call (e.g., 'light', 'switch', 'climate', 'vacuum', 'media_player', etc.)",
-                        },
-                        "action": {
-                            "type": "string",
-                            "description": "The service action (e.g., 'turn_on', 'turn_off', 'toggle', 'set_temperature')",
-                        },
-                        "target": {
-                            "type": "object",
-                            "description": "Target entities, areas, or devices",
-                            "properties": {
-                                "entity_id": {
-                                    "oneOf": [
-                                        {"type": "string"},
-                                        {"type": "array", "items": {"type": "string"}},
-                                    ],
-                                    "description": "Single entity ID or list of entity IDs",
-                                },
-                                "area_id": {
-                                    "oneOf": [
-                                        {"type": "string"},
-                                        {"type": "array", "items": {"type": "string"}},
-                                    ],
-                                    "description": "Single area ID or list of area IDs",
-                                },
-                                "device_id": {
-                                    "oneOf": [
-                                        {"type": "string"},
-                                        {"type": "array", "items": {"type": "string"}},
-                                    ],
-                                    "description": "Single device ID or list of device IDs",
-                                },
-                            },
-                            "minProperties": 1,
-                            "additionalProperties": False,
-                        },
-                        "data": {
-                            "type": "object",
-                            "description": "Additional parameters for the service (e.g., brightness: 50, temperature: 22)",
-                            "additionalProperties": True,
-                        },
-                    },
-                    "required": ["domain", "action", "target"],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "set_conversation_state",
-                "description": "Indicate whether you expect a response from the user after your message",
-                "inputSchema": {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {
-                        "expecting_response": {
-                            "type": "boolean",
-                            "description": "true if expecting user response, false if task is complete",
-                        }
-                    },
-                    "required": ["expecting_response"],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "run_script",
-                "description": "Execute a Home Assistant script and return its response variables. Use this for scripts that return data (e.g., camera analysis, calculations). Returns the script's response variables.",
-                "inputSchema": {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {
-                        "script_id": {
-                            "type": "string",
-                            "description": "The script entity ID (e.g., 'script.llm_camera_analysis' or just 'llm_camera_analysis')",
-                        },
-                        "variables": {
-                            "type": "object",
-                            "description": "Variables to pass to the script",
-                            "additionalProperties": True,
-                        },
-                        "timeout": {
-                            "type": "integer",
-                            "description": "Timeout in seconds (default: 60)",
-                            "default": 60,
-                        },
-                    },
-                    "required": ["script_id"],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "run_automation",
-                "description": "Trigger a Home Assistant automation with optional variables. Use this to manually trigger automations.",
-                "inputSchema": {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {
-                        "automation_id": {
-                            "type": "string",
-                            "description": "The automation entity ID (e.g., 'automation.notify_on_motion' or just 'notify_on_motion')",
-                        },
-                        "variables": {
-                            "type": "object",
-                            "description": "Variables to pass to the automation (available as trigger.variables)",
-                            "additionalProperties": True,
-                        },
-                        "skip_conditions": {
-                            "type": "boolean",
-                            "description": "Whether to skip the automation's conditions (default: false)",
-                            "default": False,
-                        },
-                    },
-                    "required": ["automation_id"],
-                    "additionalProperties": False,
-                },
-            },
-            {
-                "name": "get_entity_history",
-                "description": "Get historical state changes for a specific entity over a time period. Shows when the entity changed state with timestamps. Useful for answering questions like 'when did the front door open?' or 'what time did the temperature change?'",
-                "inputSchema": {
-                    "$schema": "http://json-schema.org/draft-07/schema#",
-                    "type": "object",
-                    "properties": {
-                        "entity_id": {
-                            "type": "string",
-                            "description": "The entity ID to get history for (e.g., 'binary_sensor.front_door', 'sensor.temperature')",
-                        },
-                        "hours": {
-                            "type": "integer",
-                            "description": "Number of hours of history to retrieve (default: 24, max: 168 for 1 week)",
-                            "default": 24,
-                            "minimum": 1,
-                            "maximum": 168,
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Maximum number of state changes to return (default: 50, max: 100). Most recent changes shown first.",
-                            "default": 50,
-                            "minimum": 1,
-                            "maximum": 100,
-                        },
-                    },
-                    "required": ["entity_id"],
-                    "additionalProperties": False,
-                },
-            },
-        ]
+        # Compact built-in tools; tools and parameters that have no use in
+        # this system (floors, labels, scripts...) are not advertised at all.
+        # Full replacements per tool: see tool_descriptions/ (tool_descriptions.py).
+        tools = default_tools(**await self._get_index_flags())
 
         # Add custom tool definitions if enabled
         if self.custom_tools:
@@ -1158,6 +957,9 @@ class MCPServer:
             count=len(entities),
         )
 
+        if not entities:
+            return await self._empty_discovery_result(args)
+
         # Format results based on whether it's smart discovery or general
         return self._format_discovery_results(entities, args)
 
@@ -1174,6 +976,8 @@ class MCPServer:
                     }
                 ]
             }
+
+        default_temp_unit = getattr(self.hass.config.units, "temperature_unit", None)
 
         # Check if this is a smart discovery result (has summary metadata)
         has_summary = entities and entities[0].get("entity_id") == "_summary"
@@ -1226,7 +1030,7 @@ class MCPServer:
                         else ""
                     )
                     text_parts.append(
-                        f"  • {entity['entity_id']}: {entity['name']} - {entity['state']}{type_desc}{location_text}{labels}"
+                        f"  • {entity['entity_id']}: {entity['name']} - {_state_text(entity, default_temp_unit)}{type_desc}{location_text}{labels}"
                     )
 
             # Group related entities by category
@@ -1254,7 +1058,7 @@ class MCPServer:
                             else ""
                         )
                         text_parts.append(
-                            f"    • {entity['entity_id']}: {entity['state']}{location_text}{labels}"
+                            f"    • {entity['entity_id']}: {_state_text(entity, default_temp_unit)}{location_text}{labels}"
                         )
 
             return {"content": [{"type": "text", "text": "\n".join(text_parts)}]}
@@ -1263,8 +1067,9 @@ class MCPServer:
             text_parts = [f"Found {len(entities)} entities:"]
 
             for entity in entities:
-                detail_parts = [f"State: {entity['state']}"]
-                detail_parts.append(f"Area: {entity.get('area', 'None')}")
+                detail_parts = [f"State: {_state_text(entity, default_temp_unit)}"]
+                if entity.get("area"):
+                    detail_parts.append(f"Area: {entity['area']}")
                 if entity.get("floor"):
                     detail_parts.append(f"Floor: {entity['floor']}")
                 if entity.get("labels"):
@@ -1275,13 +1080,57 @@ class MCPServer:
 
             return {"content": [{"type": "text", "text": "\n".join(text_parts)}]}
 
+    async def _empty_discovery_result(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Explain an empty discovery result so the model can correct itself.
+
+        Deliberately does not retry with fewer filters: if name_contains was
+        the only filter, that would dump every entity into the context.
+        """
+        used = [
+            f"{key}={args[key]!r}"
+            for key in _DISCOVERY_FILTERS
+            if args.get(key) not in (None, "", [])
+        ]
+        criteria = ", ".join(used) if used else "no filters"
+
+        area = args.get("area")
+        if isinstance(area, str) and area.strip():
+            if not self.discovery.is_known_area_or_floor(area):
+                areas = await self.discovery.list_areas()
+                names = [a["name"] for a in areas if a.get("entity_count")][:30]
+                text = f"No entities found: there is no area or floor {area!r}."
+                if names:
+                    text += (
+                        f" Available areas: {', '.join(names)}."
+                        " Retry with one of these names exactly."
+                    )
+                return {"content": [{"type": "text", "text": text}]}
+
+        text = f"No entities found for {criteria}."
+        has_area = isinstance(area, str) and bool(area.strip())
+        if has_area and len(used) > 1:
+            # A wrong or too narrow area is the most common cause. The area may
+            # be the user's own words, so the hint keeps that case out.
+            text += f" If the user did not name this room, retry without area={area!r}."
+        elif args.get("state") and len(used) > 1:
+            text += " Retry without state."
+        elif len(used) > 1:
+            text += " Retry with fewer filters."
+        elif args.get("name_contains"):
+            text += (
+                " Try a shorter part of the word (without the ending),"
+                " or use domain / device_class from the INDEX."
+            )
+        text += " Do not guess entity IDs."
+        return {"content": [{"type": "text", "text": text}]}
+
     async def tool_get_entity_details(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Get detailed information about specific entities."""
         entity_ids = args.get("entity_ids", [])
         details = await self.discovery.get_entity_details(entity_ids)
 
         details = _strip_non_json_serializable(details)
-        return {"content": [{"type": "text", "text": json.dumps(details, indent=2)}]}
+        return {"content": [{"type": "text", "text": self._llm_json(details)}]}
 
     async def tool_list_areas(self) -> Dict[str, Any]:
         """List all areas."""
@@ -1384,7 +1233,7 @@ class MCPServer:
         index = await index_manager.get_index()
 
         # Format as JSON for structured consumption
-        return {"content": [{"type": "text", "text": json.dumps(index, indent=2)}]}
+        return {"content": [{"type": "text", "text": self._llm_json(compact_index(index))}]}
 
     async def tool_perform_action(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Perform an action on Home Assistant entities with progress notifications."""
@@ -1518,7 +1367,7 @@ class MCPServer:
 
             if wants_response and response:
                 response = _strip_non_json_serializable(response)
-                result_text += "\n\nResponse:\n" + json.dumps(response, indent=2)
+                result_text += "\n\nResponse:\n" + self._llm_json(response)
 
             if "entity_id" in resolved_target:
                 entity_ids = resolved_target["entity_id"]
@@ -1590,6 +1439,16 @@ class MCPServer:
         variables = args.get("variables", {})
         timeout = args.get("timeout", 60)
 
+        if not script_id or not isinstance(script_id, str):
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "❌ Error: Missing required parameter 'script_id'. Use discover_entities with domain=\"script\" to find it.",
+                    }
+                ]
+            }
+
         # Extract script name (remove script. prefix if present)
         script_name = script_id.replace("script.", "")
         full_script_id = f"script.{script_name}"
@@ -1641,7 +1500,7 @@ class MCPServer:
 
             # If the script returned response variables, include them
             if response:
-                result_text += f"\n\nResponse:\n{json.dumps(response, indent=2)}"
+                result_text += f"\n\nResponse:\n{self._llm_json(response)}"
                 return {
                     "content": [{"type": "text", "text": result_text}],
                     "response": response,
@@ -1664,6 +1523,16 @@ class MCPServer:
         automation_id = args.get("automation_id")
         variables = args.get("variables", {})
         skip_conditions = args.get("skip_conditions", False)
+
+        if not automation_id or not isinstance(automation_id, str):
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "❌ Error: Missing required parameter 'automation_id'. Use discover_entities with domain=\"automation\" to find it.",
+                    }
+                ]
+            }
 
         # Normalize automation_id (add automation. prefix if missing)
         if not automation_id.startswith("automation."):

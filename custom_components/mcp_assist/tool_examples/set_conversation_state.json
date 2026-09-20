@@ -1,0 +1,18 @@
+{
+  "type": "function",
+  "function": {
+    "name": "set_conversation_state",
+    "description": "Indicate whether you expect a response from the user after your message",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "expecting_response": {
+          "type": "boolean",
+          "description": "true if expecting user response, false if task is complete"
+        }
+      },
+      "required": ["expecting_response"],
+      "additionalProperties": false
+    }
+  }
+}

@@ -70,7 +70,9 @@
           "search_provider": "Web Search",
           "brave_api_key": "Brave Search API Key",
           "allowed_ips": "Additional Allowed IPs/Ranges",
-          "enable_gap_filling": "Enable Smart Entity Index"
+          "enable_gap_filling": "Enable Smart Entity Index",
+          "max_entities_per_discovery": "Max Entities Per Discovery (20-500)",
+          "ensure_ascii": "Escape non-ASCII characters in JSON sent to the LLM"
         }
       }
     },
@@ -140,7 +142,8 @@
           "brave_api_key": "Brave Search API Key",
           "allowed_ips": "Additional Allowed IPs/Ranges",
           "enable_gap_filling": "Enable Smart Entity Index",
-          "max_entities_per_discovery": "Max Entities Per Discovery (20-500)"
+          "max_entities_per_discovery": "Max Entities Per Discovery (20-500)",
+          "ensure_ascii": "Escape non-ASCII characters in JSON sent to the LLM"
         }
       }
     }

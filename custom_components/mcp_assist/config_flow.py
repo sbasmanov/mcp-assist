@@ -25,6 +25,7 @@ from homeassistant.helpers.selector import (
 )
 
 from .localization import get_language_instruction, get_follow_up_phrases, get_end_words
+from .tool_definitions import default_tools
 
 from .const import (
     DOMAIN,
@@ -53,6 +54,8 @@ from .const import (
     CONF_ENABLE_GAP_FILLING,
     CONF_MAX_ENTITIES_PER_DISCOVERY,
     DEFAULT_MAX_ENTITIES_PER_DISCOVERY,
+    CONF_ENSURE_ASCII,
+    DEFAULT_ENSURE_ASCII,
     CONF_OLLAMA_KEEP_ALIVE,
     CONF_OLLAMA_NUM_CTX,
     CONF_FOLLOW_UP_PHRASES,
@@ -434,7 +437,12 @@ async def _get_available_tool_names(hass: HomeAssistant) -> list[str]:
                 tool["name"] for tool in tools_result.get("tools", []) if tool.get("name")
             ]
             if live_names:
-                return live_names
+                # The live list hides built-ins that have no use right now
+                # (run_script with no scripts...); they stay selectable here
+                # so a later-added script works without re-configuring.
+                builtin_names = [tool["name"] for tool in default_tools()]
+                extra_names = [n for n in live_names if n not in builtin_names]
+                return builtin_names + extra_names
         except Exception as err:
             _LOGGER.warning(
                 "Could not fetch live MCP tool list, falling back to static list: %s",
@@ -1255,6 +1263,7 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_MAX_ENTITIES_PER_DISCOVERY,
                     default=DEFAULT_MAX_ENTITIES_PER_DISCOVERY,
                 ): vol.All(vol.Coerce(int), vol.Range(min=20, max=500)),
+                vol.Optional(CONF_ENSURE_ASCII, default=DEFAULT_ENSURE_ASCII): bool,
             }
         )
 
@@ -1389,12 +1398,17 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
             except Exception as err:
                 _LOGGER.error(f"❌ OPTIONS: Failed to fetch models: {err}")
         elif server_type == SERVER_TYPE_OPENAI:
-            # OpenAI - fetch from API
+            # OpenAI - fetch from API (custom OpenAI-compatible URL is honored)
+            base_url = options.get(
+                CONF_LMSTUDIO_URL, data.get(CONF_LMSTUDIO_URL, OPENAI_BASE_URL)
+            ).rstrip("/")
             api_key = options.get(CONF_API_KEY, data.get(CONF_API_KEY, ""))
-            if api_key:
+            if api_key or base_url != OPENAI_BASE_URL:
                 _LOGGER.info("🔍 OPTIONS: Attempting to fetch models from OpenAI")
                 try:
-                    models = await fetch_models_from_openai(self.hass, api_key)
+                    models = await fetch_models_from_openai(
+                        self.hass, api_key, base_url
+                    )
                     _LOGGER.info(
                         f"✅ OPTIONS: Successfully fetched {len(models)} OpenAI models"
                     )
@@ -1923,6 +1937,13 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                         ),
                     ),
                 ): vol.All(vol.Coerce(int), vol.Range(min=20, max=500)),
+                vol.Optional(
+                    CONF_ENSURE_ASCII,
+                    default=sys_options.get(
+                        CONF_ENSURE_ASCII,
+                        sys_data.get(CONF_ENSURE_ASCII, DEFAULT_ENSURE_ASCII),
+                    ),
+                ): bool,
             }
         )
 
