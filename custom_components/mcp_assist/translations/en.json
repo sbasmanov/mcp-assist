@@ -54,6 +54,7 @@
           "ollama_keep_alive": "Ollama Keep Alive",
           "ollama_num_ctx": "Ollama Context Window",
           "clean_responses": "Clean Responses for Voice Output",
+          "mask_stale_reads": "Mask stale state-read answers in history",
           "openclaw_session_key": "Session Key / Session ID",
           "hermes_session_key": "Memory Session Key"
         },
@@ -120,6 +121,7 @@
           "ollama_keep_alive": "Ollama Keep Alive",
           "ollama_num_ctx": "Ollama Context Window",
           "clean_responses": "Clean Responses for Voice Output",
+          "mask_stale_reads": "Mask stale state-read answers in history",
           "openclaw_host": "Gateway Host",
           "openclaw_port": "Gateway Port",
           "openclaw_token": "Gateway Token",

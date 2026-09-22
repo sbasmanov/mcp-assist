@@ -45,6 +45,13 @@ CONF_END_WORDS = "end_words"
 CONF_CLEAN_RESPONSES = "clean_responses"
 CONF_TIMEOUT = "timeout"
 CONF_ALLOWED_TOOLS = "allowed_tools"
+# Whether pure state-read answers get replaced with a placeholder in history
+# before the next request (see agent.py _STALE_VALUE_PLACEHOLDER). Small
+# models tend to parrot a stale value instead of re-calling a tool; larger
+# models can often be trusted with the real history instead. Per-profile so
+# a small-model and a large-model profile can each use the setting that
+# suits them.
+CONF_MASK_STALE_READS = "mask_stale_reads"
 
 # All MCP tools the agent can be given access to. Used both as the source of
 # selector options in the config/options flow and as the default (all
@@ -126,6 +133,9 @@ DEFAULT_FOLLOW_UP_PHRASES = "anything else, what else, would you, do you, should
 DEFAULT_END_WORDS = "stop, cancel, no, nope, thanks, thank you, bye, goodbye, done, never mind, nevermind, forget it, that's all, that's it"
 DEFAULT_CLEAN_RESPONSES = False
 DEFAULT_TIMEOUT = 30
+# Default True: preserves the existing (small-model-safe) behavior for
+# profiles created before this setting existed.
+DEFAULT_MASK_STALE_READS = True
 # Default is "all tools enabled" - matches pre-existing behavior for entries
 # created before this setting existed, and is the sane default for new ones.
 DEFAULT_ALLOWED_TOOLS = list(ALL_MCP_TOOLS)

@@ -63,6 +63,7 @@ from .const import (
     CONF_CLEAN_RESPONSES,
     CONF_TIMEOUT,
     CONF_ALLOWED_TOOLS,
+    CONF_MASK_STALE_READS,
     SERVER_TYPE_LMSTUDIO,
     SERVER_TYPE_LLAMACPP,
     SERVER_TYPE_OLLAMA,
@@ -116,6 +117,7 @@ from .const import (
     DEFAULT_CLEAN_RESPONSES,
     DEFAULT_TIMEOUT,
     DEFAULT_ALLOWED_TOOLS,
+    DEFAULT_MASK_STALE_READS,
     ALL_MCP_TOOLS,
     DEFAULT_API_KEY,
     OPENAI_BASE_URL,
@@ -1123,6 +1125,9 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(
                         CONF_CLEAN_RESPONSES, default=DEFAULT_CLEAN_RESPONSES
                     ): bool,
+                    vol.Optional(
+                        CONF_MASK_STALE_READS, default=DEFAULT_MASK_STALE_READS
+                    ): bool,
                     vol.Required(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): vol.All(
                         vol.Coerce(int), vol.Range(min=5, max=300)
                     ),
@@ -1756,6 +1761,14 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                         default=options.get(
                             CONF_CLEAN_RESPONSES,
                             data.get(CONF_CLEAN_RESPONSES, DEFAULT_CLEAN_RESPONSES),
+                        ),
+                    ): bool,
+                    # Mask stale state-read answers in history
+                    vol.Optional(
+                        CONF_MASK_STALE_READS,
+                        default=options.get(
+                            CONF_MASK_STALE_READS,
+                            data.get(CONF_MASK_STALE_READS, DEFAULT_MASK_STALE_READS),
                         ),
                     ): bool,
                     # 15/17. Response Time Out

@@ -57,6 +57,8 @@ from .const import (
     CONF_CLEAN_RESPONSES,
     CONF_TIMEOUT,
     CONF_ALLOWED_TOOLS,
+    CONF_MASK_STALE_READS,
+    DEFAULT_MASK_STALE_READS,
     CONF_ENSURE_ASCII,
     DEFAULT_ENSURE_ASCII,
     DEFAULT_ALLOWED_TOOLS,
@@ -291,6 +293,14 @@ class MCPAssistConversationEntity(ConversationEntity):
         return self.entry.options.get(
             CONF_CLEAN_RESPONSES,
             self.entry.data.get(CONF_CLEAN_RESPONSES, DEFAULT_CLEAN_RESPONSES),
+        )
+
+    @property
+    def mask_stale_reads(self) -> bool:
+        """Whether pure state-read turns get redacted from history (dynamic)."""
+        return self.entry.options.get(
+            CONF_MASK_STALE_READS,
+            self.entry.data.get(CONF_MASK_STALE_READS, DEFAULT_MASK_STALE_READS),
         )
 
     @property
@@ -1414,7 +1424,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         for turn in history[-5:]:
             messages.append({"role": "user", "content": turn["user"]})
             assistant_text = turn["assistant"]
-            if self._turn_was_pure_state_read(turn):
+            if self.mask_stale_reads and self._turn_was_pure_state_read(turn):
                 assistant_text = self._STALE_VALUE_PLACEHOLDER
             messages.append({"role": "assistant", "content": assistant_text})
 

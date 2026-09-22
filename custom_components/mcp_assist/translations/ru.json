@@ -46,6 +46,7 @@
           "ollama_keep_alive": "Поддерживать Ollama активным",
           "ollama_num_ctx": "Контекстное окно Ollama",
           "clean_responses": "Очистка ответов для голосового вывода",
+          "mask_stale_reads": "Скрывать устаревшие ответы-чтения в истории",
           "openclaw_session_key": "Ключ сессии / ID сессии",
           "hermes_session_key": "Ключ сессии памяти"
         },
@@ -110,6 +111,7 @@
           "ollama_keep_alive": "Поддерживать Ollama активным",
           "ollama_num_ctx": "Контекстное окно Ollama",
           "clean_responses": "Очистка ответов для голосового вывода",
+          "mask_stale_reads": "Скрывать устаревшие ответы-чтения в истории",
           "openclaw_session_key": "Ключ сессии / ID сессии",
           "hermes_url": "URL сервера Hermes",
           "hermes_session_key": "Ключ сессии памяти"
