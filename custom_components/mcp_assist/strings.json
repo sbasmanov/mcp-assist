@@ -44,6 +44,7 @@
           "max_tokens": "Max Response Tokens",
           "max_history": "Max History Messages",
           "max_iterations": "Max Tool Iterations",
+          "limit_message": "Limit Reached Message",
           "control_home_assistant": "Control Home Assistant",
           "response_mode": "Response Mode",
           "follow_up_phrases": "Follow-up Phrases",
@@ -59,7 +60,8 @@
         },
         "data_description": {
           "openclaw_session_key": "OpenClaw session to use: a short key like 'main' or a full session ID like 'agent:main:main'.",
-          "hermes_session_key": "Stable key scoping Hermes long-term memory for this profile."
+          "hermes_session_key": "Stable key scoping Hermes long-term memory for this profile.",
+          "limit_message": "Shown when the tool-call loop hits Max Tool Iterations with no final answer. Use {max_iterations} as a placeholder for the configured limit. Defaults to a message in the language Home Assistant is configured for."
         }
       },
       "mcp_server": {
@@ -110,6 +112,7 @@
           "max_tokens": "Max Response Tokens",
           "max_history": "Max History Messages",
           "max_iterations": "Max Tool Iterations",
+          "limit_message": "Limit Reached Message",
           "control_home_assistant": "Control Home Assistant",
           "response_mode": "Response Mode",
           "follow_up_phrases": "Follow-up Phrases",
@@ -130,7 +133,8 @@
         },
         "data_description": {
           "openclaw_session_key": "OpenClaw session to use: a short key like 'main' or a full session ID like 'agent:main:main'.",
-          "hermes_session_key": "Stable key scoping Hermes long-term memory for this profile."
+          "hermes_session_key": "Stable key scoping Hermes long-term memory for this profile.",
+          "limit_message": "Shown when the tool-call loop hits Max Tool Iterations with no final answer. Use {max_iterations} as a placeholder for the configured limit."
         }
       },
       "mcp_server": {

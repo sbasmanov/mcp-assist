@@ -202,3 +202,116 @@ def get_supported_languages() -> list[str]:
         List of ISO 639-1 language codes.
     """
     return sorted(LANGUAGE_METADATA.keys())
+
+
+# Message shown when the tool-call loop hits max_iterations without a final
+# answer (see const.py DEFAULT_LIMIT_MESSAGE / agent.py limit_message).
+# Only used as the *default* pre-filled into the config/options flow text
+# field (same pattern as FOLLOW_UP_PHRASES/END_WORDS above) - once saved,
+# it's just a flat per-profile string, not re-looked-up at runtime.
+# {max_iterations} is a literal placeholder, formatted in by agent.py.
+LIMIT_MESSAGE = {
+    "en": (
+        "I reached the maximum of {max_iterations} tool calls while processing your "
+        "request. Try simplifying your request, or increase the limit in Advanced "
+        "Settings if you have a complex automation need."
+    ),
+    "ru": (
+        "Я достиг предела в {max_iterations} вызовов инструментов при обработке "
+        "запроса. Попробуйте упростить запрос или увеличьте лимит в расширенных "
+        "настройках, если вам нужна сложная автоматизация."
+    ),
+}
+
+
+def get_limit_message(language_code: str) -> str:
+    """Get the max-iterations fallback message for language.
+
+    Args:
+        language_code: ISO 639-1 language code (e.g., "de", "fr-CA", "ru")
+
+    Returns:
+        Message string with a literal {max_iterations} placeholder.
+        Falls back to English if language not found.
+    """
+    base_code = language_code.lower()
+    if "-" in base_code and base_code not in LIMIT_MESSAGE:
+        base_code = base_code.split("-")[0]
+
+    message = LIMIT_MESSAGE.get(base_code)
+    if not message:
+        _LOGGER.warning(
+            "Limit message for language '%s' not found. Using English default. "
+            "Consider adding this language to localization.py",
+            language_code,
+        )
+        return LIMIT_MESSAGE["en"]
+
+    return message
+
+
+# Per-language translations of RESPONSE_MODE_INSTRUCTIONS (const.py), which
+# is substituted into technical_prompt via the {response_mode} placeholder
+# on every turn (agent.py _build_system_prompt_with_context). Unlike
+# LIMIT_MESSAGE this is looked up dynamically per-conversation, keyed by the
+# actual ConversationInput.language HA passes for that turn - not just used
+# as a one-time config-flow default. const.py's RESPONSE_MODE_INSTRUCTIONS
+# is the English source of truth and the fallback for any language (or any
+# mode) not covered here.
+RESPONSE_MODE_INSTRUCTIONS_TRANSLATIONS = {
+    "ru": {
+        "none": """## Уточняющие вопросы
+НЕ задавай уточняющих вопросов. Заверши задачу и сразу закончи разговор.
+
+## Завершение разговора
+Всегда завершай разговор после выполнения задачи.""",
+        "default": """## Уточняющие вопросы
+Естественно формулируй уместные уточняющие вопросы по контексту:
+- После действия с одним устройством: естественно спроси, нужна ли ещё помощь (формулировку меняй каждый раз)
+- При сообщении регулируемого состояния: сама предложи его изменить, в естественной форме
+- При частичном выполнении: спроси, нужно ли выполнить оставшееся
+Всегда меняй формулировку — не повторяй один и тот же вопрос дважды за разговор.
+
+НЕ задавай общих вопросов вроде «что-нибудь ещё?» без конкретного контекста.
+Когда задаёшь вопрос, используй инструмент set_conversation_state, чтобы показать, что ждёшь ответа.
+
+## Завершение разговора
+После выполнения задачи завершай разговор, если уместный уточняющий вопрос не напрашивается сам.""",
+        "always": """## Уточняющие вопросы
+Естественно формулируй уместные уточняющие вопросы по контексту:
+- После действия с одним устройством: естественно спроси, нужна ли ещё помощь (формулировку меняй каждый раз)
+- При сообщении регулируемого состояния: сама предложи его изменить, в естественной форме
+- При частичном выполнении: спроси, нужно ли выполнить оставшееся
+Всегда меняй формулировку — не повторяй один и тот же вопрос дважды за разговор.
+Когда задаёшь вопрос, используй инструмент set_conversation_state, чтобы показать, что ждёшь ответа.
+
+## Завершение разговора
+Когда пользователь даёт понять, что закончил, подтверди это и завершай разговор естественно.""",
+    },
+}
+
+
+def get_response_mode_instructions(language_code: str, mode: str) -> str:
+    """Get the {response_mode} block for language and follow_up_mode.
+
+    Args:
+        language_code: ISO 639-1 language code, typically ConversationInput.language
+            for the current turn (e.g. "de", "ru", "en-US").
+        mode: follow_up_mode value ("none", "default", or "always").
+
+    Returns:
+        Mode-specific instructions in the requested language. Falls back to
+        English (const.py RESPONSE_MODE_INSTRUCTIONS) if the language or the
+        mode isn't translated.
+    """
+    from .const import RESPONSE_MODE_INSTRUCTIONS  # local import avoids a cycle
+
+    base_code = (language_code or "").lower()
+    if "-" in base_code and base_code not in RESPONSE_MODE_INSTRUCTIONS_TRANSLATIONS:
+        base_code = base_code.split("-")[0]
+
+    lang_modes = RESPONSE_MODE_INSTRUCTIONS_TRANSLATIONS.get(base_code)
+    if lang_modes and mode in lang_modes:
+        return lang_modes[mode]
+
+    return RESPONSE_MODE_INSTRUCTIONS.get(mode, RESPONSE_MODE_INSTRUCTIONS["default"])

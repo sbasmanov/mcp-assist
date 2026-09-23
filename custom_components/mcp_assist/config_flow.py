@@ -24,7 +24,7 @@ from homeassistant.helpers.selector import (
     BooleanSelector,
 )
 
-from .localization import get_language_instruction, get_follow_up_phrases, get_end_words
+from .localization import get_language_instruction, get_follow_up_phrases, get_end_words, get_limit_message
 from .tool_definitions import default_tools
 
 from .const import (
@@ -62,6 +62,7 @@ from .const import (
     CONF_END_WORDS,
     CONF_CLEAN_RESPONSES,
     CONF_TIMEOUT,
+    CONF_LIMIT_MESSAGE,
     CONF_ALLOWED_TOOLS,
     CONF_MASK_STALE_READS,
     SERVER_TYPE_LMSTUDIO,
@@ -116,6 +117,7 @@ from .const import (
     DEFAULT_END_WORDS,
     DEFAULT_CLEAN_RESPONSES,
     DEFAULT_TIMEOUT,
+    DEFAULT_LIMIT_MESSAGE,
     DEFAULT_ALLOWED_TOOLS,
     DEFAULT_MASK_STALE_READS,
     ALL_MCP_TOOLS,
@@ -1103,6 +1105,10 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_MAX_ITERATIONS, default=DEFAULT_MAX_ITERATIONS
                     ): vol.Coerce(int),
+                    vol.Optional(
+                        CONF_LIMIT_MESSAGE,
+                        default=get_limit_message(self.hass.config.language),
+                    ): TextSelector(TextSelectorConfig(multiline=True)),
                     vol.Required(
                         CONF_RESPONSE_MODE, default=DEFAULT_RESPONSE_MODE
                     ): SelectSelector(
@@ -1727,6 +1733,14 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                             data.get(CONF_MAX_ITERATIONS, DEFAULT_MAX_ITERATIONS),
                         ),
                     ): vol.Coerce(int),
+                    # Limit Message (shown when max_iterations is hit)
+                    vol.Optional(
+                        CONF_LIMIT_MESSAGE,
+                        default=options.get(
+                            CONF_LIMIT_MESSAGE,
+                            data.get(CONF_LIMIT_MESSAGE, DEFAULT_LIMIT_MESSAGE),
+                        ),
+                    ): TextSelector(TextSelectorConfig(multiline=True)),
                     # 11/13. Response Mode
                     vol.Required(
                         CONF_RESPONSE_MODE, default=response_mode_value

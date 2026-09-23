@@ -81,7 +81,7 @@ def default_tools(
             "Control a device using an entity ID from discover_entities.",
             {
                 "domain": _str("e.g. light"),
-                "action": _str("e.g. turn_on, turn_off, set_temperature"),
+                "action": _str("e.g. turn_on, turn_off, set_temperature, set_cover_position"),
                 "target": {
                     "type": "object",
                     "description": "The entity to control",

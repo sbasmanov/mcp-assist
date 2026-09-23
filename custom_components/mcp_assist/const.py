@@ -45,6 +45,11 @@ CONF_END_WORDS = "end_words"
 CONF_CLEAN_RESPONSES = "clean_responses"
 CONF_TIMEOUT = "timeout"
 CONF_ALLOWED_TOOLS = "allowed_tools"
+# Message spoken/shown when the tool-call loop hits max_iterations without a
+# final answer. Overridable per-profile so it can be set in the profile's own
+# language instead of always falling back to English. Use {max_iterations} as
+# a placeholder for the configured limit.
+CONF_LIMIT_MESSAGE = "limit_message"
 # Whether pure state-read answers get replaced with a placeholder in history
 # before the next request (see agent.py _STALE_VALUE_PLACEHOLDER). Small
 # models tend to parrot a stale value instead of re-calling a tool; larger
@@ -133,6 +138,11 @@ DEFAULT_FOLLOW_UP_PHRASES = "anything else, what else, would you, do you, should
 DEFAULT_END_WORDS = "stop, cancel, no, nope, thanks, thank you, bye, goodbye, done, never mind, nevermind, forget it, that's all, that's it"
 DEFAULT_CLEAN_RESPONSES = False
 DEFAULT_TIMEOUT = 30
+DEFAULT_LIMIT_MESSAGE = (
+    "I reached the maximum of {max_iterations} tool calls while processing your "
+    "request. Try simplifying your request, or increase the limit in Advanced "
+    "Settings if you have a complex automation need."
+)
 # Default True: preserves the existing (small-model-safe) behavior for
 # profiles created before this setting existed.
 DEFAULT_MASK_STALE_READS = True

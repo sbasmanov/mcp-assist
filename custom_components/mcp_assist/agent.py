@@ -56,6 +56,7 @@ from .const import (
     CONF_END_WORDS,
     CONF_CLEAN_RESPONSES,
     CONF_TIMEOUT,
+    CONF_LIMIT_MESSAGE,
     CONF_ALLOWED_TOOLS,
     CONF_MASK_STALE_READS,
     DEFAULT_MASK_STALE_READS,
@@ -85,6 +86,7 @@ from .const import (
     DEFAULT_END_WORDS,
     DEFAULT_CLEAN_RESPONSES,
     DEFAULT_TIMEOUT,
+    DEFAULT_LIMIT_MESSAGE,
     RESPONSE_MODE_INSTRUCTIONS,
     SERVER_TYPE_LMSTUDIO,
     SERVER_TYPE_LLAMACPP,
@@ -111,6 +113,7 @@ from .const import (
 )
 from .conversation_history import ConversationHistory
 from .llm_json import compact_index, llm_json
+from .localization import get_response_mode_instructions
 from .tool_descriptions import apply_tool_overrides
 
 _LOGGER = logging.getLogger(__name__)
@@ -430,6 +433,19 @@ class MCPAssistConversationEntity(ConversationEntity):
         """Get request timeout in seconds (dynamic)."""
         return self.entry.options.get(
             CONF_TIMEOUT, self.entry.data.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+        )
+
+    @property
+    def limit_message(self) -> str:
+        """Message returned when max_iterations is hit with no final answer.
+
+        Overridable per-profile (dynamic) so it can be set in the profile's
+        own language; falls back to the English default. Formatted with
+        {max_iterations} by the caller.
+        """
+        return self.entry.options.get(
+            CONF_LIMIT_MESSAGE,
+            self.entry.data.get(CONF_LIMIT_MESSAGE, DEFAULT_LIMIT_MESSAGE),
         )
 
     @property
@@ -1291,9 +1307,11 @@ class MCPAssistConversationEntity(ConversationEntity):
                 f"Current date: {current_date}"
             )
 
-            # Inject mode-specific instructions
-            mode_instructions = RESPONSE_MODE_INSTRUCTIONS.get(
-                self.follow_up_mode, RESPONSE_MODE_INSTRUCTIONS["default"]
+            # Inject mode-specific instructions, localized to this turn's
+            # conversation language (falls back to English - see
+            # localization.get_response_mode_instructions).
+            mode_instructions = get_response_mode_instructions(
+                user_input.language, self.follow_up_mode
             )
             technical_prompt = technical_prompt.replace(
                 "{response_mode}", mode_instructions
@@ -2529,7 +2547,7 @@ class MCPAssistConversationEntity(ConversationEntity):
             return response_text, all_tools_used
         else:
             return (
-                f"I reached the maximum of {self.max_iterations} tool calls while processing your request. Try simplifying your request, or increase the limit in Advanced Settings if you have a complex automation need.",
+                self.limit_message.format(max_iterations=self.max_iterations),
                 all_tools_used,
             )
 
@@ -2749,7 +2767,7 @@ class MCPAssistConversationEntity(ConversationEntity):
             f"⚠️ Hit maximum iterations ({self.max_iterations}) in tool execution loop"
         )
         return (
-            f"I reached the maximum of {self.max_iterations} tool calls while processing your request. Try simplifying your request, or increase the limit in Advanced Settings if you have a complex automation need.",
+            self.limit_message.format(max_iterations=self.max_iterations),
             all_tools_used,
         )
 
