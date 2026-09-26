@@ -24,7 +24,7 @@ from homeassistant.helpers.selector import (
     BooleanSelector,
 )
 
-from .localization import get_language_instruction, get_follow_up_phrases, get_end_words, get_limit_message
+from .localization import get_language_instruction, get_follow_up_phrases, get_end_words, get_limit_message, get_stale_read_placeholder
 from .tool_definitions import default_tools
 
 from .const import (
@@ -65,6 +65,7 @@ from .const import (
     CONF_LIMIT_MESSAGE,
     CONF_ALLOWED_TOOLS,
     CONF_MASK_STALE_READS,
+    CONF_STALE_READ_PLACEHOLDER,
     SERVER_TYPE_LMSTUDIO,
     SERVER_TYPE_LLAMACPP,
     SERVER_TYPE_OLLAMA,
@@ -120,6 +121,7 @@ from .const import (
     DEFAULT_LIMIT_MESSAGE,
     DEFAULT_ALLOWED_TOOLS,
     DEFAULT_MASK_STALE_READS,
+    DEFAULT_STALE_READ_PLACEHOLDER,
     ALL_MCP_TOOLS,
     DEFAULT_API_KEY,
     OPENAI_BASE_URL,
@@ -1134,6 +1136,10 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(
                         CONF_MASK_STALE_READS, default=DEFAULT_MASK_STALE_READS
                     ): bool,
+                    vol.Optional(
+                        CONF_STALE_READ_PLACEHOLDER,
+                        default=get_stale_read_placeholder(self.hass.config.language),
+                    ): TextSelector(TextSelectorConfig(multiline=True)),
                     vol.Required(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): vol.All(
                         vol.Coerce(int), vol.Range(min=5, max=300)
                     ),
@@ -1785,6 +1791,18 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                             data.get(CONF_MASK_STALE_READS, DEFAULT_MASK_STALE_READS),
                         ),
                     ): bool,
+                    # Text substituted for a masked turn - blank drops the text
+                    # entirely instead of substituting a placeholder
+                    vol.Optional(
+                        CONF_STALE_READ_PLACEHOLDER,
+                        default=options.get(
+                            CONF_STALE_READ_PLACEHOLDER,
+                            data.get(
+                                CONF_STALE_READ_PLACEHOLDER,
+                                DEFAULT_STALE_READ_PLACEHOLDER,
+                            ),
+                        ),
+                    ): TextSelector(TextSelectorConfig(multiline=True)),
                     # 15/17. Response Time Out
                     vol.Required(
                         CONF_TIMEOUT,

@@ -50,6 +50,8 @@
           "follow_up_phrases": "Follow-up Phrases",
           "end_words": "End Conversation Words",
           "clean_responses": "Clean Responses for Voice Output",
+          "mask_stale_reads": "Mask Stale State Reads in History",
+          "stale_read_placeholder": "Stale Read Placeholder Text",
           "timeout": "Response Time Out",
           "debug_mode": "Debug Mode",
           "allowed_tools": "Allowed MCP Tools",
@@ -61,7 +63,8 @@
         "data_description": {
           "openclaw_session_key": "OpenClaw session to use: a short key like 'main' or a full session ID like 'agent:main:main'.",
           "hermes_session_key": "Stable key scoping Hermes long-term memory for this profile.",
-          "limit_message": "Shown when the tool-call loop hits Max Tool Iterations with no final answer. Use {max_iterations} as a placeholder for the configured limit. Defaults to a message in the language Home Assistant is configured for."
+          "limit_message": "Shown when the tool-call loop hits Max Tool Iterations with no final answer. Use '{max_iterations}' as a placeholder for the configured limit. Defaults to a message in the language Home Assistant is configured for.",
+          "stale_read_placeholder": "Replaces a past pure-state-read answer in history so the model can't parrot a stale value. Leave blank to drop the text entirely instead of substituting a placeholder - useful for small models that tend to imitate any unusual turn in history, including this one. Only used when Mask Stale State Reads is on. Defaults to a message in the language Home Assistant is configured for."
         }
       },
       "mcp_server": {
@@ -118,6 +121,8 @@
           "follow_up_phrases": "Follow-up Phrases",
           "end_words": "End Conversation Words",
           "clean_responses": "Clean Responses for Voice Output",
+          "mask_stale_reads": "Mask Stale State Reads in History",
+          "stale_read_placeholder": "Stale Read Placeholder Text",
           "timeout": "Response Time Out",
           "debug_mode": "Debug Mode",
           "allowed_tools": "Allowed MCP Tools",
@@ -134,7 +139,8 @@
         "data_description": {
           "openclaw_session_key": "OpenClaw session to use: a short key like 'main' or a full session ID like 'agent:main:main'.",
           "hermes_session_key": "Stable key scoping Hermes long-term memory for this profile.",
-          "limit_message": "Shown when the tool-call loop hits Max Tool Iterations with no final answer. Use {max_iterations} as a placeholder for the configured limit."
+          "limit_message": "Shown when the tool-call loop hits Max Tool Iterations with no final answer. Use '{max_iterations}' as a placeholder for the configured limit.",
+          "stale_read_placeholder": "Replaces a past pure-state-read answer in history so the model can't parrot a stale value. Leave blank to drop the text entirely instead of substituting a placeholder - useful for small models that tend to imitate any unusual turn in history, including this one. Only used when Mask Stale State Reads is on."
         }
       },
       "mcp_server": {

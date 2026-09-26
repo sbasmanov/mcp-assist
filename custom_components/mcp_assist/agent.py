@@ -59,6 +59,7 @@ from .const import (
     CONF_LIMIT_MESSAGE,
     CONF_ALLOWED_TOOLS,
     CONF_MASK_STALE_READS,
+    CONF_STALE_READ_PLACEHOLDER,
     DEFAULT_MASK_STALE_READS,
     CONF_ENSURE_ASCII,
     DEFAULT_ENSURE_ASCII,
@@ -87,6 +88,7 @@ from .const import (
     DEFAULT_CLEAN_RESPONSES,
     DEFAULT_TIMEOUT,
     DEFAULT_LIMIT_MESSAGE,
+    DEFAULT_STALE_READ_PLACEHOLDER,
     RESPONSE_MODE_INSTRUCTIONS,
     SERVER_TYPE_LMSTUDIO,
     SERVER_TYPE_LLAMACPP,
@@ -113,7 +115,7 @@ from .const import (
 )
 from .conversation_history import ConversationHistory
 from .llm_json import compact_index, llm_json
-from .localization import get_response_mode_instructions
+from .localization import get_response_mode_instructions, get_stale_read_placeholder
 from .tool_descriptions import apply_tool_overrides
 
 _LOGGER = logging.getLogger(__name__)
@@ -304,6 +306,21 @@ class MCPAssistConversationEntity(ConversationEntity):
         return self.entry.options.get(
             CONF_MASK_STALE_READS,
             self.entry.data.get(CONF_MASK_STALE_READS, DEFAULT_MASK_STALE_READS),
+        )
+
+    @property
+    def stale_read_placeholder(self) -> str:
+        """Text substituted for a masked stale-read turn (dynamic).
+
+        Overridable per-profile so it can be set in the profile's own
+        language, or to an empty string to drop the turn's text instead of
+        substituting a placeholder; falls back to the English default.
+        """
+        return self.entry.options.get(
+            CONF_STALE_READ_PLACEHOLDER,
+            self.entry.data.get(
+                CONF_STALE_READ_PLACEHOLDER, DEFAULT_STALE_READ_PLACEHOLDER
+            ),
         )
 
     @property
@@ -1415,10 +1432,13 @@ class MCPAssistConversationEntity(ConversationEntity):
     # parrot it instead of calling a tool again - regardless of how the next
     # question is phrased. Control actions ("turned on X") are never redacted;
     # only pure state reads are, since those can go stale at any time.
-    _STALE_VALUE_PLACEHOLDER = (
-        "(Reported a live value here earlier - it may already be outdated. "
-        "Do not reuse it; call a tool again for the current value.)"
-    )
+    #
+    # This class-level English string is now only the LAST-RESORT fallback
+    # (kept for the sync `_build_system_prompt` path and any code that
+    # imports it directly); the actual text used at runtime is the
+    # `stale_read_placeholder` property above, which is per-profile and can
+    # be a translation or an empty string.
+    _STALE_VALUE_PLACEHOLDER = DEFAULT_STALE_READ_PLACEHOLDER
 
     @staticmethod
     def _turn_was_pure_state_read(turn: Dict[str, Any]) -> bool:
@@ -1443,7 +1463,7 @@ class MCPAssistConversationEntity(ConversationEntity):
             messages.append({"role": "user", "content": turn["user"]})
             assistant_text = turn["assistant"]
             if self.mask_stale_reads and self._turn_was_pure_state_read(turn):
-                assistant_text = self._STALE_VALUE_PLACEHOLDER
+                assistant_text = self.stale_read_placeholder
             messages.append({"role": "assistant", "content": assistant_text})
 
         # Add current user message

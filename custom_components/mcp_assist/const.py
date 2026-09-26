@@ -57,6 +57,15 @@ CONF_LIMIT_MESSAGE = "limit_message"
 # a small-model and a large-model profile can each use the setting that
 # suits them.
 CONF_MASK_STALE_READS = "mask_stale_reads"
+# Text substituted for a masked turn (see CONF_MASK_STALE_READS above).
+# Overridable per-profile, same reasoning as CONF_LIMIT_MESSAGE: the default
+# below is English regardless of prompt language, so a non-English profile
+# should set this to a translation, or to an empty string to drop the
+# anomalous text pattern entirely instead of substituting one - some small
+# models turn out to imitate ANY unusual turn sitting in recent history
+# (including this placeholder itself), so removing it outright can work
+# better than translating it.
+CONF_STALE_READ_PLACEHOLDER = "stale_read_placeholder"
 
 # All MCP tools the agent can be given access to. Used both as the source of
 # selector options in the config/options flow and as the default (all
@@ -146,6 +155,10 @@ DEFAULT_LIMIT_MESSAGE = (
 # Default True: preserves the existing (small-model-safe) behavior for
 # profiles created before this setting existed.
 DEFAULT_MASK_STALE_READS = True
+DEFAULT_STALE_READ_PLACEHOLDER = (
+    "(Reported a live value here earlier - it may already be outdated. "
+    "Do not reuse it; call a tool again for the current value.)"
+)
 # Default is "all tools enabled" - matches pre-existing behavior for entries
 # created before this setting existed, and is the sane default for new ones.
 DEFAULT_ALLOWED_TOOLS = list(ALL_MCP_TOOLS)

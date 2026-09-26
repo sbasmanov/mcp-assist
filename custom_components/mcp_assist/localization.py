@@ -250,6 +250,56 @@ def get_limit_message(language_code: str) -> str:
     return message
 
 
+# Text substituted for a masked "stale read" turn in history (see const.py
+# CONF_STALE_READ_PLACEHOLDER / agent.py mask_stale_reads). Same
+# default-only-at-config-time pattern as LIMIT_MESSAGE above: once saved to
+# a profile it's a flat string, not re-looked-up per turn. An empty string is
+# a valid, deliberate choice here (not a missing translation) - it drops the
+# turn's text to nothing instead of substituting an alternate pattern, which
+# can matter for small models prone to imitating whatever unusual text sits
+# in recent history, including a placeholder that doesn't match the prompt's
+# own language.
+STALE_READ_PLACEHOLDER = {
+    "en": (
+        "(Reported a live value here earlier - it may already be outdated. "
+        "Do not reuse it; call a tool again for the current value.)"
+    ),
+    "ru": (
+        "(Ранее здесь было показано актуальное на тот момент значение - оно "
+        "могло устареть. Не используй его повторно; вызови инструмент заново, "
+        "чтобы получить текущее значение.)"
+    ),
+}
+
+
+def get_stale_read_placeholder(language_code: str) -> str:
+    """Get the stale-read placeholder text for language.
+
+    Args:
+        language_code: ISO 639-1 language code (e.g., "de", "fr-CA", "ru")
+
+    Returns:
+        Placeholder string in the specified language. Falls back to English
+        if the language isn't found - this function never returns an empty
+        string on its own; an empty override is something the person sets
+        explicitly per-profile, not a fallback this picks.
+    """
+    base_code = language_code.lower()
+    if "-" in base_code and base_code not in STALE_READ_PLACEHOLDER:
+        base_code = base_code.split("-")[0]
+
+    text = STALE_READ_PLACEHOLDER.get(base_code)
+    if not text:
+        _LOGGER.warning(
+            "Stale-read placeholder for language '%s' not found. Using English "
+            "default. Consider adding this language to localization.py",
+            language_code,
+        )
+        return STALE_READ_PLACEHOLDER["en"]
+
+    return text
+
+
 # Per-language translations of RESPONSE_MODE_INSTRUCTIONS (const.py), which
 # is substituted into technical_prompt via the {response_mode} placeholder
 # on every turn (agent.py _build_system_prompt_with_context). Unlike
