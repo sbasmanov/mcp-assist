@@ -66,6 +66,7 @@ from .const import (
     CONF_ALLOWED_TOOLS,
     CONF_MASK_STALE_READS,
     CONF_STALE_READ_PLACEHOLDER,
+    CONF_STALE_READ_USE_PLACEHOLDER,
     SERVER_TYPE_LMSTUDIO,
     SERVER_TYPE_LLAMACPP,
     SERVER_TYPE_OLLAMA,
@@ -122,6 +123,7 @@ from .const import (
     DEFAULT_ALLOWED_TOOLS,
     DEFAULT_MASK_STALE_READS,
     DEFAULT_STALE_READ_PLACEHOLDER,
+    DEFAULT_STALE_READ_USE_PLACEHOLDER,
     ALL_MCP_TOOLS,
     DEFAULT_API_KEY,
     OPENAI_BASE_URL,
@@ -1137,6 +1139,10 @@ class MCPAssistConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_MASK_STALE_READS, default=DEFAULT_MASK_STALE_READS
                     ): bool,
                     vol.Optional(
+                        CONF_STALE_READ_USE_PLACEHOLDER,
+                        default=DEFAULT_STALE_READ_USE_PLACEHOLDER,
+                    ): bool,
+                    vol.Optional(
                         CONF_STALE_READ_PLACEHOLDER,
                         default=get_stale_read_placeholder(self.hass.config.language),
                     ): TextSelector(TextSelectorConfig(multiline=True)),
@@ -1791,8 +1797,21 @@ class MCPAssistOptionsFlow(config_entries.OptionsFlow):
                             data.get(CONF_MASK_STALE_READS, DEFAULT_MASK_STALE_READS),
                         ),
                     ): bool,
-                    # Text substituted for a masked turn - blank drops the text
-                    # entirely instead of substituting a placeholder
+                    # Off: drop the masked turn's assistant message entirely
+                    # instead of substituting the placeholder text below
+                    # (regardless of whatever is stored in that field).
+                    vol.Optional(
+                        CONF_STALE_READ_USE_PLACEHOLDER,
+                        default=options.get(
+                            CONF_STALE_READ_USE_PLACEHOLDER,
+                            data.get(
+                                CONF_STALE_READ_USE_PLACEHOLDER,
+                                DEFAULT_STALE_READ_USE_PLACEHOLDER,
+                            ),
+                        ),
+                    ): bool,
+                    # Text substituted for a masked turn when the toggle above
+                    # is on - ignored entirely when it's off
                     vol.Optional(
                         CONF_STALE_READ_PLACEHOLDER,
                         default=options.get(

@@ -66,6 +66,17 @@ CONF_MASK_STALE_READS = "mask_stale_reads"
 # (including this placeholder itself), so removing it outright can work
 # better than translating it.
 CONF_STALE_READ_PLACEHOLDER = "stale_read_placeholder"
+# Whether a masked turn uses CONF_STALE_READ_PLACEHOLDER's text at all.
+# When False, the masked turn's assistant message (and its history-side
+# `user` question stays) is dropped from the messages sent to the model
+# entirely, instead of substituting any placeholder text - including an
+# empty string. This sidesteps the HA options-flow quirk where clearing an
+# Optional field with a non-empty default just resubmits that default, and
+# it removes the copyable-anomalous-text substrate outright rather than
+# picking better wording for it. Default True preserves existing behavior
+# (use the placeholder text) for profiles created before this setting
+# existed.
+CONF_STALE_READ_USE_PLACEHOLDER = "stale_read_use_placeholder"
 
 # All MCP tools the agent can be given access to. Used both as the source of
 # selector options in the config/options flow and as the default (all
@@ -159,6 +170,7 @@ DEFAULT_STALE_READ_PLACEHOLDER = (
     "(Reported a live value here earlier - it may already be outdated. "
     "Do not reuse it; call a tool again for the current value.)"
 )
+DEFAULT_STALE_READ_USE_PLACEHOLDER = True
 # Default is "all tools enabled" - matches pre-existing behavior for entries
 # created before this setting existed, and is the sane default for new ones.
 DEFAULT_ALLOWED_TOOLS = list(ALL_MCP_TOOLS)

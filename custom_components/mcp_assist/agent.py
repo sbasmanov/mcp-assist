@@ -60,7 +60,9 @@ from .const import (
     CONF_ALLOWED_TOOLS,
     CONF_MASK_STALE_READS,
     CONF_STALE_READ_PLACEHOLDER,
+    CONF_STALE_READ_USE_PLACEHOLDER,
     DEFAULT_MASK_STALE_READS,
+    DEFAULT_STALE_READ_USE_PLACEHOLDER,
     CONF_ENSURE_ASCII,
     DEFAULT_ENSURE_ASCII,
     DEFAULT_ALLOWED_TOOLS,
@@ -320,6 +322,24 @@ class MCPAssistConversationEntity(ConversationEntity):
             CONF_STALE_READ_PLACEHOLDER,
             self.entry.data.get(
                 CONF_STALE_READ_PLACEHOLDER, DEFAULT_STALE_READ_PLACEHOLDER
+            ),
+        )
+
+    @property
+    def stale_read_use_placeholder(self) -> bool:
+        """Whether a masked turn substitutes placeholder text at all (dynamic).
+
+        When False, a masked turn's assistant message is dropped from the
+        messages sent to the model entirely (the preceding user question is
+        kept, so elliptical follow-ups like "and outside?" still resolve),
+        instead of substituting stale_read_placeholder's text - including an
+        empty string. Independent of that field's stored value, which is
+        ignored when this is off.
+        """
+        return self.entry.options.get(
+            CONF_STALE_READ_USE_PLACEHOLDER,
+            self.entry.data.get(
+                CONF_STALE_READ_USE_PLACEHOLDER, DEFAULT_STALE_READ_USE_PLACEHOLDER
             ),
         )
 
@@ -655,6 +675,21 @@ class MCPAssistConversationEntity(ConversationEntity):
             return arguments
         return json.dumps(arguments, ensure_ascii=False)
 
+    def _json_dumps(self, obj: Any) -> str:
+        """Serialize a full request body for aiohttp's `json=` kwarg.
+
+        Passed as ClientSession(json_serialize=...) so it governs the WHOLE
+        payload (not just the INDEX snippet that llm_json() escapes on its
+        own) per the "Экранировать не-ASCII символы в JSON для модели"
+        setting - aiohttp's own default json= serializer always uses
+        ensure_ascii=True regardless of that setting, which is why turning
+        it off previously had no visible effect on the wire.
+        """
+        ensure_ascii = self._get_shared_setting(
+            CONF_ENSURE_ASCII, DEFAULT_ENSURE_ASCII
+        )
+        return json.dumps(obj, ensure_ascii=ensure_ascii)
+
     def _parse_tool_arguments(self, arguments: Any) -> Dict[str, Any]:
         """Parse tool arguments whether they arrive as a dict or JSON string."""
         if arguments is None:
@@ -968,7 +1003,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         )
 
         timeout = aiohttp.ClientTimeout(total=self.timeout)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession(timeout=timeout, json_serialize=self._json_dumps) as session:
             async with session.post(url, headers=headers, json=payload) as resp:
                 if resp.status != 200:
                     await self._raise_hermes_error(resp)
@@ -1026,7 +1061,7 @@ class MCPAssistConversationEntity(ConversationEntity):
         )
 
         timeout = aiohttp.ClientTimeout(total=self.timeout)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession(timeout=timeout, json_serialize=self._json_dumps) as session:
             async with session.post(url, headers=headers, json=payload) as resp:
                 if resp.status != 200:
                     await self._raise_hermes_error(resp)
@@ -1461,8 +1496,19 @@ class MCPAssistConversationEntity(ConversationEntity):
         # Add conversation history (last 5 turns)
         for turn in history[-5:]:
             messages.append({"role": "user", "content": turn["user"]})
+
+            is_masked = self.mask_stale_reads and self._turn_was_pure_state_read(turn)
+            if is_masked and not self.stale_read_use_placeholder:
+                # Drop the assistant turn entirely instead of substituting a
+                # placeholder. The user's question above still anchors any
+                # elliptical follow-up ("and outside?"), but there is no
+                # anomalous same-role text left in history for a small model
+                # to imitate - unlike a placeholder string, which itself
+                # becomes a copyable pattern once several pile up.
+                continue
+
             assistant_text = turn["assistant"]
-            if self.mask_stale_reads and self._turn_was_pure_state_read(turn):
+            if is_masked:
                 assistant_text = self.stale_read_placeholder
             messages.append({"role": "assistant", "content": assistant_text})
 
@@ -1483,7 +1529,7 @@ class MCPAssistConversationEntity(ConversationEntity):
 
             # Get tools list from MCP server
             timeout = aiohttp.ClientTimeout(total=5)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, json_serialize=self._json_dumps) as session:
                 async with session.post(
                     f"{mcp_url}/",
                     json={
@@ -1578,7 +1624,7 @@ class MCPAssistConversationEntity(ConversationEntity):
             _LOGGER.debug(f"MCP request: {json.dumps(payload, indent=2)}")
 
             timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, json_serialize=self._json_dumps) as session:
                 async with session.post(f"{mcp_url}/", json=payload) as response:
                     if response.status != 200:
                         error_text = await response.text()
@@ -1877,7 +1923,7 @@ class MCPAssistConversationEntity(ConversationEntity):
 
         try:
             timeout = aiohttp.ClientTimeout(total=self.timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, json_serialize=self._json_dumps) as session:
                 url = f"{self.base_url_dynamic}/v1/chat/completions"
                 headers = self._get_auth_headers()
                 async with session.post(url, headers=headers, json=payload) as response:
@@ -2188,7 +2234,7 @@ class MCPAssistConversationEntity(ConversationEntity):
 
             try:
                 timeout = aiohttp.ClientTimeout(total=self.timeout)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with aiohttp.ClientSession(timeout=timeout, json_serialize=self._json_dumps) as session:
                     # Use appropriate endpoint based on server type
                     if self.server_type == SERVER_TYPE_OLLAMA:
                         url = f"{self.base_url_dynamic}/api/chat"
@@ -2648,7 +2694,7 @@ class MCPAssistConversationEntity(ConversationEntity):
             clean_payload = clean_for_json_http(payload)
 
             timeout = aiohttp.ClientTimeout(total=self.timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, json_serialize=self._json_dumps) as session:
                 # Use appropriate endpoint based on server type
                 if self.server_type == SERVER_TYPE_OLLAMA:
                     url = f"{self.base_url_dynamic}/api/chat"

@@ -1239,7 +1239,11 @@ class MCPServer:
         """Perform an action on Home Assistant entities with progress notifications."""
         domain = args.get("domain")
         action = args.get("action")
-        target = args.get("target", {})
+        target = args.get("target") or {}
+        # Flat form advertised to the model: entity_id at the top level.
+        # Merge it into `target` so resolve_target()/area_id/device_id keep working.
+        if args.get("entity_id"):
+            target = {**target, "entity_id": args["entity_id"]}
         data = args.get("data", {})
 
         # Validate required parameters

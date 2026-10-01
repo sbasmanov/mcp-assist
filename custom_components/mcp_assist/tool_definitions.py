@@ -82,18 +82,17 @@ def default_tools(
             {
                 "domain": _str("e.g. light"),
                 "action": _str("e.g. turn_on, turn_off, set_temperature, set_cover_position"),
-                "target": {
-                    "type": "object",
-                    "description": "The entity to control",
-                    "properties": {"entity_id": _str("Entity ID")},
-                    "required": ["entity_id"],
-                },
+                # Flat on purpose: a nested required `target.entity_id` object made the
+                # 4B model skip the call (it answered "done" without calling) far more
+                # often than a flat entity_id (A/B in tests/perform_action_ab.py).
+                # mcp_server.tool_perform_action still accepts the old `target` form.
+                "entity_id": _str("Entity ID to control"),
                 "data": {
                     "type": "object",
                     "description": "Extra parameters, e.g. brightness, temperature",
                 },
             },
-            ["domain", "action", "target"],
+            ["domain", "action", "entity_id"],
         ),
         _tool(
             "set_conversation_state",
