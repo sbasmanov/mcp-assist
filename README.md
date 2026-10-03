@@ -119,7 +119,12 @@ answering "done" with no `tool_calls` at all, or emitting pseudo-call text
 instead of a real call — than with a flat `entity_id`. The parameter is now
 flat; `mcp_server.py`'s handler still accepts the old `target.entity_id` /
 `area_id` / `device_id` forms, so other MCP clients calling this server
-directly are unaffected.
+directly are unaffected. The `action` parameter's description also now lists
+`set_cover_position` as an example alongside `turn_on`/`turn_off`/
+`set_temperature` — `cover` entities (blinds, gates, garage doors) aren't
+controlled via `turn_on`/`turn_off`, and the model would otherwise have no
+hint that `set_cover_position` (with `data={"position": N}`) is the right
+action for them.
 
 ### 4. Compact built-in tool definitions + per-tool override files (`tool_definitions.py`, `tool_descriptions.py`, `tool_descriptions/`, `tool_examples/`)
 The tool schemas sent to the LLM used to be large, verbose JSON Schema blocks
